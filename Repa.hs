@@ -39,8 +39,6 @@ data Expr a where
   Min :: Ord a => Expr a -> Expr a -> Expr a
   Max :: Ord a => Expr a -> Expr a -> Expr a
 
-  --Func2 :: (a -> b -> c) -> Expr a -> Expr b -> Expr c
-  
   Return :: Expr a -> Expr (IO a)
   Bind   :: Expr (IO a) -> (Expr a -> Expr (IO b)) -> Expr (IO b)
   
@@ -68,7 +66,6 @@ instance Num a => Num (Expr a) where
 
 
 data M a = M { unM :: forall b. ((a -> Expr (IO b)) -> Expr (IO b)) }
---data M a = M { unM :: ((a -> Expr (IO ())) -> Expr (IO ())) }
 
 instance Monad M where
   return a = M $ \k -> k a
@@ -220,87 +217,4 @@ translateFunction f =
 
 newIOUArray :: MArray IOUArray a IO => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
-
-{-
--- Pull arrays
-
-data Pull a = Pull (Expr Int -> a) (Expr Int)
-
-instance Functor Pull where
-  fmap f (Pull ixf l) = Pull (f . ixf) l
-
-enumPull :: Expr Int -> Expr Int -> Pull (Expr Int)
-enumPull s e = Pull (\i -> s + i) (e - s)
-
-storePull :: MArray IOUArray a IO => Pull (Expr a) -> M (Expr (IOUArray Int a))
-storePull (Pull ixf l) = do arr <- newArrayE l
-                            parM l (\i ->
-                                     writeArrayE arr i (ixf i)
-                                     )
-                            return arr
-
--- Push
-
-newtype P a = P { unP :: ((a -> Expr (IO ())) -> Expr (IO ())) }
-
-instance Monad P where
-  return a = P $ \k -> k a
-  P f >>= g = P $ \k -> f (\a -> unP (g a) k)
-
-instance Functor P where
-  fmap f (P g) = P $ (\k -> g (k . f))
-
-data Push a = Push (P (Expr Int, a)) (Expr Int)
---data Push a = Push (M (Expr Int,a)) (Expr Int)
-
-instance Functor Push where
-  fmap f (Push m l) = Push (fmap (second f) m) l
-
-(+.+) :: Push a -> Push a -> Push a
-Push m1 l1 +.+ Push m2 l2 = Push m (l1 + l2)
-  where m = do m1
-               indexT (l1 +) m2
-
-indexT :: (Expr Int -> Expr Int) -> P (Expr Int,a) -> P (Expr Int,a)
-indexT t m = do (i,a) <- m
-                return (t i,a)
-
-
-storePush :: MArray IOUArray a IO => Push (Expr a) -> M (Expr (IOUArray Int a))
-storePush (Push m l) = do arr <- newArrayE l
-                          M (\k -> unP m (\(i,a) -> WriteArray arr i a)
-                                   `Bind` (\_ -> k ()))
-                          return arr
-
-pullToPush :: Pull a -> Push a
-pullToPush (Pull ixf l) = Push m l
-  where m = P (\k -> ParM l (\i -> k (i,ixf i) `Bind` (\_ -> Skip)))
-
-
-ex :: M (Expr Int)
-ex =
- do arr <- storePush $ pullToPush $ enumPull 0 9
-    x <- readArrayE arr 5
-    return x
-
-ex2 = (storePush $ pullToPush $ enumPull 0 9) >>= (\arr -> readArrayE arr 5)
-
-pex = Push (P (\k -> ParM 9 (\i -> k (i,i)))) 9
-ex3 = storePush $ (pex) +.+ (pex)
-
-
-test :: IO ()
-test =
-  do i <- eval $ (runM ex)
-     print i
-     x <- runQ (translate $ runM ex)
-     putStrLn $ pprint x
-     y <- eval $ runM ex3
-     l <- getElems y
-     print l
--}    
-
---Shapes
-
-
 
