@@ -140,7 +140,7 @@ forShape :: Shape sh -> (Shape sh -> M ()) -> M ()
 forShape Z k = k Z
 forShape (sh :. l) k = forShape sh (\sh2 -> parM l (\i -> k (sh2 :. i)))
 
-data Pull sh a = Pull ((Shape sh) -> a) (Shape sh)
+data Pull sh a = Pull (Shape sh -> a) (Shape sh)
 
 instance P.Functor (Pull sh) where
   fmap f (Pull ixf sh) = Pull (f . ixf) sh
@@ -162,7 +162,7 @@ backpermute :: Shape sh2 -> (Shape sh2 -> Shape sh1) -> Pull sh1 a -> Pull sh2 a
 backpermute sh2 perm (Pull ixf sh1) = Pull (ixf . perm) sh2
 
 
-data Push sh a = Push (((Shape sh) -> a -> M ()) -> M ()) (Shape sh)
+data Push sh a = Push ((Shape sh -> a -> M ()) -> M ()) (Shape sh)
 
 
 storePush :: MArray IOUArray a IO => Push sh (Expr a) -> M (Expr (IOUArray Length a))
@@ -179,24 +179,19 @@ permute :: Shape sh2 -> (Shape sh1 -> Shape sh2) -> Push sh1 a -> Push sh2 a
 permute sh2 perm (Push m sh1) = Push (\k -> m (\i a -> k (perm i) a)) sh2
 
 
-
-class Pushy arr where
+class Arr arr where
   toPush :: arr sh a -> Push sh a
+  ixMap  :: (Shape sh -> Shape sh) -> arr sh a -> arr sh a
+  extent :: arr sh a -> (Shape sh)
 
-instance Pushy Pull where
+instance Arr Pull where
   toPush (Pull ixf sh) = Push m sh
     where m k = forShape sh (\i -> k i (ixf i))
-
-instance Pushy Push where
-  toPush = P.id
-
-
-class IxMapable arr where
-  ixMap ::  (Shape sh -> Shape sh) -> arr sh a -> arr sh a
-
-instance IxMapable Push where
-  ixMap f (Push m sh) = permute sh f (Push m sh)
-
-instance IxMapable Pull where
   ixMap f (Pull ixf sh) = Pull (ixf . f) sh
+  extent (Pull _ sh) = sh
+
+instance Arr Push where
+  toPush = P.id
+  ixMap f (Push m sh) = permute sh f (Push m sh)
+  extent (Push _ sh) = sh
 
