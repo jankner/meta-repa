@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fth #-}
-{-# LANGUAGE GADTs, RankNTypes, FlexibleContexts #-}
+{-# LANGUAGE GADTs, RankNTypes, FlexibleContexts, FlexibleInstances, TypeFamilies #-}
 module Repa where
 
 
@@ -39,8 +39,13 @@ data Expr a where
   Min :: Ord a => Expr a -> Expr a -> Expr a
   Max :: Ord a => Expr a -> Expr a -> Expr a
 
+  Tup2 :: Expr a -> Expr b -> Expr (a,b)
+
   Return :: Expr a -> Expr (IO a)
   Bind   :: Expr (IO a) -> (Expr a -> Expr (IO b)) -> Expr (IO b)
+
+  IterateWhile :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> Expr s -> Expr s
+  WhileM :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> (Expr s -> Expr (IO ())) -> Expr s -> Expr (IO ())
   
   NewArray   :: MArray IOUArray a IO => Expr Int -> Expr (IO (IOUArray Int a))
   ReadArray  :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
@@ -96,6 +101,11 @@ share a = M (\k -> Return a `Bind` k)
 printE :: Show a => Expr a -> M ()
 printE a = M (\k -> Print a `Bind` (\_ -> k ()))
 
+whileE :: (Expr a -> Expr Bool) -> (Expr a -> Expr a) -> (Expr a -> M ()) -> Expr a -> M ()
+whileE cond step action init = M (\k -> WhileM cond step (\a -> unM (action a) (\() -> Skip)) init
+                                        `Bind` (\_ -> k ()))
+
+
 --Examples
 
 fillArray :: MArray IOUArray a IO => Expr a -> Expr Int -> M (Expr (IOUArray Int a))
@@ -131,6 +141,9 @@ eval (Min a b) = min (eval a) (eval b)
 eval (Return a) = return (eval a)
 eval (Bind m f) = (eval m) >>= (\a -> eval $ f (Value a))
 
+eval (IterateWhile  cond step init) = while (evalFun cond) (evalFun step) (eval init)
+eval (WhileM cond step action init) = whileM (evalFun cond) (evalFun step) (evalFun action) (eval init)
+
 eval (NewArray l)         = newArray_ (0, (eval l)-1)
 eval (ReadArray arr i)    = readArray  (eval arr) (eval i)
 eval (WriteArray arr i a) = writeArray (eval arr) (eval i) (eval a)
@@ -139,6 +152,15 @@ eval (ParM i body) = forM_ [0..(eval (i-1))] (\i -> eval (body (Value i)))
 eval (Skip)        = return ()
 eval (Print a)     = print (eval a)
 
+evalFun :: (Expr a -> Expr b) -> a -> b
+evalFun f = eval . f . Value
+
+while cond step s | cond s    = while cond step (step s)
+                  | otherwise = s
+
+whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()    
+whileM cond step action s | cond s    = action s >> whileM cond step action (step s)
+                          | otherwise = return ()
 
 showExpr :: Int -> Expr a -> String
 showExpr i (Var v) = "x" ++ (show v)
@@ -146,6 +168,7 @@ showExpr i (Binop op a b)  = "(" ++ (showBinOp i op a b) ++ ")"
 showExpr i (Abs a)         = "(abs " ++ (showExpr i a) ++ ")"
 showExpr i (Signum a)      = "(signum " ++ (showExpr i a) ++ ")"
 showExpr i (FromInteger n) = show n
+showExpr i (BoolLit b)     = show b
 showExpr i (Equal a b)     = "(" ++ (showExpr i a) ++ " == " ++ (showExpr i b) ++ ")"
 showExpr i (NotEqual a b)     = "(" ++ (showExpr i a) ++ " /= " ++ (showExpr i b) ++ ")"
 showExpr i (LTH a b)     = "(" ++ (showExpr i a) ++ " < " ++ (showExpr i b) ++ ")"
@@ -177,6 +200,8 @@ showBinOp i Mult  a b = (showExpr i a) ++ " * " ++ (showExpr i b)
 translate :: Expr a -> Q Exp
 translate (Var2 n) = return $ VarE n
 
+translate (BoolLit b) = [| b |]
+
 translate (Binop op a b) = 
   case op of
        Plus   -> [| $(e1) + $(e2) |]
@@ -206,6 +231,8 @@ translate (NewArray l)          = [| newIOUArray (0, $(translate (l-1))) |]
 translate (ReadArray arr ix)    = [| readArray $(translate arr) $(translate ix) |]
 translate (WriteArray arr ix a) = [| writeArray $(translate arr) $(translate ix) $(translate a) |]
 translate (ParM n f) = [| forM_ [0..($(translate (n-1)))] $(translateFunction f) |]
+translate (IterateWhile cond step init) = [| while $(translateFunction cond) $(translateFunction step) $(translate init) |]
+translate (WhileM cond step action init) = [| whileM $(translateFunction cond) $(translateFunction step) $(translateFunction action) $(translate init) |]
 translate Skip       = [| return () |]
 translate (Print a)  = [| print $(translate a) |]
 
@@ -217,4 +244,5 @@ translateFunction f =
 
 newIOUArray :: MArray IOUArray a IO => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
+
 
