@@ -1,5 +1,7 @@
 {-# OPTIONS_GHC -fth #-}
 {-# LANGUAGE GADTs, RankNTypes, FlexibleContexts, FlexibleInstances, TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Repa where
 
 
@@ -10,6 +12,8 @@ import Control.Arrow
 import Control.Monad
 
 import Language.Haskell.TH
+
+import System.IO.Unsafe
 
 
 data Expr a where
@@ -40,6 +44,8 @@ data Expr a where
   Max :: Ord a => Expr a -> Expr a -> Expr a
 
   Tup2 :: Expr a -> Expr b -> Expr (a,b)
+  Fst :: Expr (a,b) -> Expr a
+  Snd :: Expr (a,b) -> Expr b
 
   Return :: Expr a -> Expr (IO a)
   Bind   :: Expr (IO a) -> (Expr a -> Expr (IO b)) -> Expr (IO b)
@@ -52,6 +58,7 @@ data Expr a where
   WriteArray :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
   ParM       :: Expr Int -> (Expr Int -> Expr (IO ())) -> Expr (IO ())
   Skip       :: Expr (IO ())
+  UnsafeIO   :: Expr (IO a) -> Expr a
 
   Print :: Show a => Expr a -> Expr (IO ())
 
@@ -137,6 +144,10 @@ eval (GTE a b) = (eval a) >= (eval b)
 
 eval (Max a b) = max (eval a) (eval b)
 eval (Min a b) = min (eval a) (eval b)
+
+eval (Tup2 a b) = (eval a, eval b)
+eval (Fst a) = fst (eval a)
+eval (Snd a) = snd (eval a)
 
 eval (Return a) = return (eval a)
 eval (Bind m f) = (eval m) >>= (\a -> eval $ f (Value a))
@@ -224,6 +235,10 @@ translate (GTE a b) = [| $(translate a) >= $(translate b) |]
 translate (Max a b) = [| max $(translate a) $(translate b) |]
 translate (Min a b) = [| min $(translate a) $(translate b) |]
 
+translate (Tup2 a b) = [| ($(translate a), $(translate b)) |]
+translate (Fst a) = [| fst $(translate a) |]
+translate (Snd a) = [| snd $(translate a) |]
+
 translate (Return a) = [|return $(translate a)|]
 translate (Bind m f) = [| $(translate m)  >>= $(translateFunction f) |]
 
@@ -245,4 +260,49 @@ translateFunction f =
 newIOUArray :: MArray IOUArray a IO => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
 
+
+class Computable a where
+  type Internal a
+  internalize :: a -> Expr (Internal a)
+  externalize :: Expr (Internal a) -> a
+
+
+instance Computable (Expr a) where
+  type Internal (Expr a) = a
+  internalize = id
+  externalize = id
+
+instance (Computable a, Computable b) => Computable (a, b) where
+  type Internal (a,b) = (Internal a, Internal b)
+  internalize (a,b) = Tup2 (internalize a) (internalize b)
+  externalize a = (externalize (Fst a), externalize (Snd a))
+
+iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
+iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
+
+
+lowerFun :: (Computable a, Computable b) => (a -> b) -> Expr (Internal a) -> Expr (Internal b)
+lowerFun f = internalize . f . externalize
+
+liftFun :: (Computable a, Computable b) => (Expr (Internal a) -> Expr (Internal b)) -> a -> b
+liftFun f = externalize . f . internalize
+
+
+class Trans a where
+  trans :: a -> Q Exp
+
+instance Trans (Expr a) where
+  trans = translate
+
+instance (Computable a, Computable b) => Trans (a,b) where
+  trans = translate . internalize
+
+instance (Computable a, Trans b) => Trans (a -> b) where
+  trans f = do
+    x <- newName "x"
+    fbody <- trans (f (externalize (Var2 x)))
+    return $ LamE [VarP x] fbody
+
+translate2 :: Computable a => a -> Q Exp
+translate2 = translate . internalize
 
