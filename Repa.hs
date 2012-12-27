@@ -13,8 +13,6 @@ import Control.Monad
 
 import Language.Haskell.TH
 
-import System.IO.Unsafe
-
 
 data Expr a where
   Var   :: Int -> Expr a
@@ -58,7 +56,6 @@ data Expr a where
   WriteArray :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
   ParM       :: Expr Int -> (Expr Int -> Expr (IO ())) -> Expr (IO ())
   Skip       :: Expr (IO ())
-  UnsafeIO   :: Expr (IO a) -> Expr a
 
   Print :: Show a => Expr a -> Expr (IO ())
 
@@ -102,14 +99,14 @@ writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` (\_ -> k ()))
 readArrayE :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
 readArrayE arr i = M (\k -> ReadArray arr i `Bind` k)
 
-share :: Expr a -> M (Expr a)
-share a = M (\k -> Return a `Bind` k)
+--share :: Computable a =>  a -> M (a)
+--share a = M (\k -> Return (internalize a) `Bind` k)
 
-printE :: Show a => Expr a -> M ()
-printE a = M (\k -> Print a `Bind` (\_ -> k ()))
+printE :: (Computable a, Show (Internal a)) => a -> M ()
+printE a = M (\k -> Print (internalize a) `Bind` (\_ -> k ()))
 
-whileE :: (Expr a -> Expr Bool) -> (Expr a -> Expr a) -> (Expr a -> M ()) -> Expr a -> M ()
-whileE cond step action init = M (\k -> WhileM cond step (\a -> unM (action a) (\() -> Skip)) init
+whileE :: Computable st => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st -> M () -- a :: Expr (Internal st), action :: st -> M (), internalize :: st -> Expr (Internal st)
+whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (\a -> unM ((action . externalize) a) (\() -> Skip)) (internalize init)
                                         `Bind` (\_ -> k ()))
 
 
@@ -240,14 +237,14 @@ translate (Fst a) = [| fst $(translate a) |]
 translate (Snd a) = [| snd $(translate a) |]
 
 translate (Return a) = [|return $(translate a)|]
-translate (Bind m f) = [| $(translate m)  >>= $(translateFunction f) |]
+translate (Bind m f) = [| $(translate m)  >>= $(trans f) |]
 
 translate (NewArray l)          = [| newIOUArray (0, $(translate (l-1))) |]
 translate (ReadArray arr ix)    = [| readArray $(translate arr) $(translate ix) |]
 translate (WriteArray arr ix a) = [| writeArray $(translate arr) $(translate ix) $(translate a) |]
 translate (ParM n f) = [| forM_ [0..($(translate (n-1)))] $(translateFunction f) |]
-translate (IterateWhile cond step init) = [| while $(translateFunction cond) $(translateFunction step) $(translate init) |]
-translate (WhileM cond step action init) = [| whileM $(translateFunction cond) $(translateFunction step) $(translateFunction action) $(translate init) |]
+translate (IterateWhile cond step init) = [| while $(trans cond) $(trans step) $(translate init) |]
+translate (WhileM cond step action init) = [| whileM $(trans cond) $(trans step) $(trans action) $(translate init) |]
 translate Skip       = [| return () |]
 translate (Print a)  = [| print $(translate a) |]
 
@@ -284,8 +281,14 @@ iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerF
 lowerFun :: (Computable a, Computable b) => (a -> b) -> Expr (Internal a) -> Expr (Internal b)
 lowerFun f = internalize . f . externalize
 
+lowerFun2 :: (Computable a, Computable b, Computable c) => (a -> b -> c) -> Expr (Internal a) -> Expr (Internal b) -> Expr (Internal c)
+lowerFun2 f a b = internalize $ f (externalize a) (externalize b)
+
 liftFun :: (Computable a, Computable b) => (Expr (Internal a) -> Expr (Internal b)) -> a -> b
 liftFun f = externalize . f . internalize
+
+liftFun2 :: (Computable a, Computable b, Computable c) => (Expr (Internal a) -> Expr (Internal b) -> Expr (Internal c)) -> a -> b -> c
+liftFun2 f a b = externalize $ f (internalize a) (internalize b)
 
 
 class Trans a where
@@ -302,7 +305,4 @@ instance (Computable a, Trans b) => Trans (a -> b) where
     x <- newName "x"
     fbody <- trans (f (externalize (Var2 x)))
     return $ LamE [VarP x] fbody
-
-translate2 :: Computable a => a -> Q Exp
-translate2 = translate . internalize
 
