@@ -1,8 +1,8 @@
 {-# LANGUAGE GADTs, TypeOperators, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
 module Frontend where
 
-import Data.Array.IO hiding (inRange)
-import Data.Array.MArray hiding (inRange)
+import Data.Array.IO hiding (inRange,index)
+import Data.Array.MArray hiding (inRange,index)
 
 import qualified Prelude as P
 import Prelude ((*),(+),(-),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
@@ -18,6 +18,7 @@ infix  4 >
 infix  4 <
 infixr 3 &&
 infixr 2 ||
+
 
 (==) :: Eq a => Expr a -> Expr a -> Expr Bool
 a == b = Equal a b
@@ -86,6 +87,7 @@ dim :: Shape sh -> Int
 dim Z = 0
 dim (sh :. _) = dim sh + 1
 
+{-
 class Shapely sh where
   mkShape :: Expr Index -> Shape sh
   toShape :: Int -> Expr [Length] -> Shape sh
@@ -96,8 +98,8 @@ instance Shapely Z where
 
 instance Shapely sh => Shapely (sh :. Expr Length) where
   mkShape i = mkShape i :. i
-  toShape i arr = P.undefined
---      = toShape (i+1) arr :. (arr ! (P.fromIntegral i))
+  toShape i arr
+      = toShape (i+1) arr :. (arr ! (P.fromIntegral i))
 
 zeroDim :: Shapely sh => Shape sh
 zeroDim = mkShape 0
@@ -107,6 +109,7 @@ unitDim = mkShape 1
 
 fakeShape :: Shapely sh => String -> Shape sh
 fakeShape err = mkShape (P.error err)
+-}
 
 size :: Shape sh -> Expr Length
 size Z         = 1
@@ -195,3 +198,11 @@ instance Arr Push where
   ixMap f (Push m sh) = permute sh f (Push m sh)
   extent (Push _ sh) = sh
 
+index :: Pull sh a -> Shape sh -> a
+index (Pull ixf s) = ixf
+
+foldS :: (Computable b, Computable a) => b -> (a -> b -> b) -> Pull (sh :. Expr Length) a -> Pull sh b
+foldS s f (Pull ixf (sh :. n)) = fromFunction (\sh -> P.snd $ iterateWhile (\(i,_) -> i < n) (\(i,s) -> (i+1, ixf (sh :. i) `f` s)) (0, s)) sh
+
+sumS :: (P.Num a, Computable a) => Pull (sh :. Expr Length) a -> Pull sh a
+sumS = foldS 0 (+)
