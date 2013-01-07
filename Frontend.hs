@@ -206,3 +206,27 @@ foldS s f (Pull ixf (sh :. n)) = fromFunction (\sh -> P.snd $ iterateWhile (\(i,
 
 sumS :: (P.Num a, Computable a) => Pull (sh :. Expr Length) a -> Pull sh a
 sumS = foldS 0 (+)
+
+interleave2 :: Push sh a -> Push sh a -> Push sh a
+interleave2 (Push m1 (sh1 :. l1)) (Push m2 (sh2 :. l2)) = Push m (sh1 :. (l1 + l2))
+  where m k = m1 (everyNPlusM 2 0 k) >> m2 (everyNPlusM 2 1 k)
+
+interleave3 :: Push sh a -> Push sh a -> Push sh a -> Push sh a
+interleave3 (Push m1 (sh1 :. l1)) (Push m2 (sh2 :. l2)) (Push m3 (sh3 :. l3)) = Push m (sh1 :. (l1 + l2 + l3))
+  where m k = m1 (everyNPlusM 3 0 k) >> m2 (everyNPlusM 3 1 k) >> m3 (everyNPlusM 3 2 k)
+
+everyNPlusM :: Expr Int -> Expr Int -> (Shape (sh :. Expr Int) -> a -> M ()) -> Shape (sh :. Expr Int) -> a -> M ()
+everyNPlusM n m k (sh :. i) = k (sh :. (i * n + m))
+
+
+interleave2' :: Pull (sh :. Expr Int) a -> Pull (sh :. Expr Int) a -> Push (sh :. Expr Int) a
+interleave2' (Pull ixf1 (sh1 :. l1)) (Pull ixf2 (sh2 :. l2)) = Push m sh
+  where m k = forShape (sh1:.l1) (\s@(sh :. i) -> k (sh :. (i * 2)) (ixf1 s) >> k (sh :. (i * 2 + 1)) (ixf2 s))
+        sh  = sh1 :. (l1 + l2)
+
+
+reverse :: Arr arr => arr sh a -> arr sh a
+reverse arr = ixMap (\(sh:.i) -> sh :. (n - i)) arr
+  where n = case extent arr of sh :. x -> x
+
+lastLength (sh:.n) = n
