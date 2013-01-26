@@ -1,8 +1,18 @@
-{-# LANGUAGE GADTs, TypeOperators, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 module Frontend where
 
 import Data.Array.IO hiding (inRange,index)
 import Data.Array.MArray hiding (inRange,index)
+import Data.Array.IArray hiding (inRange,index)
+import Data.Array.Unboxed hiding (inRange,index)
 
 import qualified Prelude as P
 import Prelude ((*),(+),(-),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
@@ -87,10 +97,10 @@ dim :: Shape sh -> Int
 dim Z = 0
 dim (sh :. _) = dim sh + 1
 
-{-
+
 class Shapely sh where
   mkShape :: Expr Index -> Shape sh
-  toShape :: Int -> Expr [Length] -> Shape sh
+  toShape :: Int -> Expr (UArray Int Length) -> Shape sh
 
 instance Shapely Z where
   mkShape _ = Z
@@ -99,7 +109,7 @@ instance Shapely Z where
 instance Shapely sh => Shapely (sh :. Expr Length) where
   mkShape i = mkShape i :. i
   toShape i arr
-      = toShape (i+1) arr :. (arr ! (P.fromIntegral i))
+      = toShape (i+1) arr :. (readIArray arr (P.fromIntegral i))
 
 zeroDim :: Shapely sh => Shape sh
 zeroDim = mkShape 0
@@ -109,7 +119,7 @@ unitDim = mkShape 1
 
 fakeShape :: Shapely sh => String -> Shape sh
 fakeShape err = mkShape (P.error err)
--}
+
 
 size :: Shape sh -> Expr Length
 size Z         = 1
@@ -201,6 +211,14 @@ instance Arr Push where
 index :: Pull sh a -> Shape sh -> a
 index (Pull ixf s) = ixf
 
+scanS :: (Computable a, Computable b) => (a -> b -> a) -> a -> Pull (sh :. Expr Length) b -> Push (sh:.Expr Length) a
+scanS f z (Pull ixf (sh:.n)) = Push m (sh:.n+1)
+  where m k = forShape sh $ \sh -> 
+                whileE (\(i,_) -> i < (n+1)) 
+                  (\(i,x) -> (i+1, x `f` (ixf (sh :. i))))
+                  (\(i,x) -> k (sh :. i) x)
+                  (0,z)
+
 foldS :: (Computable b, Computable a) => b -> (a -> b -> b) -> Pull (sh :. Expr Length) a -> Pull sh b
 foldS s f (Pull ixf (sh :. n)) = fromFunction (\sh -> P.snd $ iterateWhile (\(i,_) -> i < n) (\(i,s) -> (i+1, ixf (sh :. i) `f` s)) (0, s)) sh
 
@@ -221,12 +239,105 @@ everyNPlusM n m k (sh :. i) = k (sh :. (i * n + m))
 
 interleave2' :: Pull (sh :. Expr Int) a -> Pull (sh :. Expr Int) a -> Push (sh :. Expr Int) a
 interleave2' (Pull ixf1 (sh1 :. l1)) (Pull ixf2 (sh2 :. l2)) = Push m sh
-  where m k = forShape (sh1:.l1) (\s@(sh :. i) -> k (sh :. (i * 2)) (ixf1 s) >> k (sh :. (i * 2 + 1)) (ixf2 s))
+  where m k = forShape (sh1:.l1) (\s@(sh :. i) ->
+                k (sh :. (i * 2)) (ixf1 s) >>
+                k (sh :. (i * 2 + 1)) (ixf2 s))
         sh  = sh1 :. (l1 + l2)
 
 
-reverse :: Arr arr => arr sh a -> arr sh a
-reverse arr = ixMap (\(sh:.i) -> sh :. (n - i)) arr
-  where n = case extent arr of sh :. x -> x
+reverse :: (Selector sel sh, Arr arr) => sel -> arr sh a -> arr sh a
+reverse sel arr = ixMap (adjustLength sel (n-)) arr
+  where n = selectLength sel (extent arr)
 
-lastLength (sh:.n) = n
+
+conc :: (Selector sel sh) => sel -> Push sh a -> Push sh a -> Push sh a
+conc sel (Push m1 sh1) (Push m2 sh2) = Push m (adjustLength sel (+ selectLength sel sh2) sh1)
+  where m k = m1 k >>
+              m2 (\sh a -> k (adjustLength sel (+ selectLength sel sh1) sh) a)
+
+
+force :: (MArray IOUArray a IO) => Push sh (Expr a) -> Push sh (Expr a)
+force (Push f l) = Push f' l
+  where f' k = do arr <- newArrayE (size l)
+                  f (\sh a -> writeArrayE arr (toIndex l sh) a)
+                  forShape l $ \ix -> do
+                    a <- readArrayE arr (toIndex l ix)
+                    k ix a
+
+fromShape :: Shape sh -> Expr (UArray Int Int)
+fromShape sh = runMutableArray $ do
+  arr <- newArrayE (P.fromInteger (P.toInteger (dim sh)))
+  forM (P.zip (toList sh) (P.map P.fromInteger [0..])) $ \(l,i) ->
+    writeArrayE arr i l
+  return arr
+
+
+instance (Shapely sh, MArray IOUArray a IO, IArray UArray a) => Computable (Pull sh (Expr a)) where
+  type Internal (Pull sh (Expr a)) = (UArray Int a, UArray Int Int)
+  internalize vec = internalize (runMutableArray (storePull vec), fromShape (extent vec))
+  externalize e = Pull (\ix -> let_ arr (\arr -> readIArray arr (toIndex sh ix))) sh
+    where (arr, dims) = externalize e
+          sh = toShape 0 dims
+
+
+forcePull :: (MArray IOUArray a IO, IArray UArray a) => Pull sh (Expr a) -> Pull sh (Expr a)
+forcePull p@(Pull ixf sh) = Pull (\ix -> ixf' arr ix) sh
+  where ixf' arr ix = readIArray arr (toIndex sh ix)
+        arr = runMutableArray (storePull p)
+
+
+data This = This
+data NotThis = NotThis
+
+data Z' = Z'
+
+data tail :.: head = tail :.: head
+
+class Selector sel sh | sel -> sh where
+  selectLength :: sel -> Shape sh -> Expr Length
+  adjustLength :: sel -> (Expr Length -> Expr Length) -> Shape sh -> Shape sh
+
+instance Selector This (sh :. Expr Length) where
+  selectLength This (_ :. l) = l
+  adjustLength This f (sh :. l) = sh :. (f l)
+
+instance Selector sel sh => Selector (sel :.: NotThis) (sh :. Expr Length) where
+  selectLength (sel :.: NotThis) (sh :. _) = selectLength sel sh
+  adjustLength (sel :.: NotThis) f (sh :. l) = (adjustLength sel f sh) :. l
+
+
+data All = All
+data Any sh = Any
+
+type family FullShape ss
+type instance FullShape Z'                   = Z
+type instance FullShape (Any sh)             = sh
+type instance FullShape (sl :.: Expr Length) = FullShape sl :. Expr Length
+type instance FullShape (sl :.: All)         = FullShape sl :. Expr Length
+
+type family SliceShape ss
+type instance SliceShape Z'                   = Z
+type instance SliceShape (Any sh)             = sh
+type instance SliceShape (sl :.: Expr Length) = SliceShape sl
+type instance SliceShape (sl :.: All)         = SliceShape sl :. Expr Length
+
+class Slice ss where
+  sliceOfFull :: ss -> Shape (FullShape ss) -> Shape (SliceShape ss)
+  fullOfSlice :: ss -> Shape (SliceShape ss) -> Shape (FullShape ss)
+
+instance Slice Z' where
+  sliceOfFull Z' Z = Z
+  fullOfSlice Z' Z = Z
+
+instance Slice (Any sh) where
+  sliceOfFull Any sh = sh
+  fullOfSlice Any sh = sh
+
+instance Slice sl => Slice (sl :.: Expr Length) where
+  sliceOfFull (sl :.: _) (sh :. _) = sliceOfFull sl sh
+  fullOfSlice (sl :.: n) sh        = fullOfSlice sl sh :. n
+
+instance Slice sl => Slice (sl :.: All) where
+  sliceOfFull (sl :.: All) (sh :. s) = sliceOfFull sl sh :. s
+  fullOfSlice (sl :.: All) (sh :. s) = fullOfSlice sl sh :. s
+

@@ -2,14 +2,21 @@
 {-# LANGUAGE GADTs, RankNTypes, FlexibleContexts, FlexibleInstances, TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Repa where
 
 
-import Data.Array.IO
-import Data.Array.MArray
+import Data.Array.IO hiding (unsafeFreeze)
+import Data.Array.MArray hiding (unsafeFreeze)
+import Data.Array.IArray
+import Data.Array.Unboxed
+import Data.Array.Unsafe
 
 import Control.Arrow
 import Control.Monad
+import Control.Monad.State
+
+import System.IO.Unsafe
 
 import Language.Haskell.TH
 
@@ -45,11 +52,17 @@ data Expr a where
   Fst :: Expr (a,b) -> Expr a
   Snd :: Expr (a,b) -> Expr b
 
+  Let :: Expr a -> (Expr a -> Expr b) -> Expr b
+
   Return :: Expr a -> Expr (IO a)
   Bind   :: Expr (IO a) -> (Expr a -> Expr (IO b)) -> Expr (IO b)
 
   IterateWhile :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> Expr s -> Expr s
   WhileM :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> (Expr s -> Expr (IO ())) -> Expr s -> Expr (IO ())
+
+  RunMutableArray :: (MArray IOUArray a IO, IArray UArray a) => Expr (IO (IOUArray Int a)) -> Expr (UArray Int a)
+  ReadIArray :: IArray UArray a => Expr (UArray Int a) -> Expr Int -> Expr a
+  ArrayLength :: IArray UArray a => Expr (UArray Int a) -> Expr Int
   
   NewArray   :: MArray IOUArray a IO => Expr Int -> Expr (IO (IOUArray Int a))
   ReadArray  :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
@@ -99,6 +112,13 @@ writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` (\_ -> k ()))
 readArrayE :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
 readArrayE arr i = M (\k -> ReadArray arr i `Bind` k)
 
+readIArray :: IArray UArray a => Expr (UArray Int a) -> Expr Int -> Expr a
+readIArray arr i = ReadIArray arr i
+
+arrayLength :: IArray UArray a => Expr (UArray Int a) -> Expr Int
+arrayLength arr = ArrayLength arr
+
+
 --share :: Computable a =>  a -> M (a)
 --share a = M (\k -> Return (internalize a) `Bind` k)
 
@@ -109,6 +129,8 @@ whileE :: Computable st => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st
 whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (\a -> unM ((action . externalize) a) (\() -> Skip)) (internalize init)
                                         `Bind` (\_ -> k ()))
 
+runMutableArray :: (MArray IOUArray a IO, IArray UArray a) => M (Expr (IOUArray Int a)) -> Expr (UArray Int a)
+runMutableArray m = RunMutableArray (runM m)
 
 --Examples
 
@@ -152,6 +174,10 @@ eval (Bind m f) = (eval m) >>= (\a -> eval $ f (Value a))
 eval (IterateWhile  cond step init) = while (evalFun cond) (evalFun step) (eval init)
 eval (WhileM cond step action init) = whileM (evalFun cond) (evalFun step) (evalFun action) (eval init)
 
+eval (RunMutableArray arr) = unsafePerformIO (eval arr >>= unsafeFreeze)
+eval (ReadIArray arr i)    = (eval arr) ! (eval i)
+eval (ArrayLength arr)     = (snd $ bounds (eval arr)) + 1
+
 eval (NewArray l)         = newArray_ (0, (eval l)-1)
 eval (ReadArray arr i)    = readArray  (eval arr) (eval i)
 eval (WriteArray arr i a) = writeArray (eval arr) (eval i) (eval a)
@@ -159,6 +185,8 @@ eval (WriteArray arr i a) = writeArray (eval arr) (eval i) (eval a)
 eval (ParM i body) = forM_ [0..(eval (i-1))] (\i -> eval (body (Value i)))
 eval (Skip)        = return ()
 eval (Print a)     = print (eval a)
+
+eval (Let e f) = evalFun f (eval e)
 
 evalFun :: (Expr a -> Expr b) -> a -> b
 evalFun f = eval . f . Value
@@ -185,14 +213,21 @@ showExpr i (GTH a b)     = "(" ++ (showExpr i a) ++ " > " ++ (showExpr i b) ++ "
 showExpr i (GTE a b)     = "(" ++ (showExpr i a) ++ " >= " ++ (showExpr i b) ++ ")"
 showExpr i (Max a b)     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 showExpr i (Min a b)     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
+showExpr i (Tup2 a b)    = "(" ++ (showExpr i a) ++ ", " ++ (showExpr i b) ++ ")"
+showExpr i (Fst a) = "(fst " ++ (showExpr i a) ++ ")"
+showExpr i (Snd a) = "(snd " ++ (showExpr i a) ++ ")"
 showExpr i (Return a)      = "(return " ++ (showExpr i a) ++ ")"
-showExpr i (Bind m f)      = (showExpr i m) ++ " >>= " ++ (showExprFun i f)
+showExpr i (Bind m f)      = "(" ++ (showExpr i m) ++ " >>= " ++ (showExprFun i f) ++ ")"
+showExpr i (RunMutableArray arr) = "(runMutableArray " ++ (showExpr i arr) ++ ")"
+showExpr i (ReadIArray arr ix)   = "(readIArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ ")"
+showExpr i (ArrayLength arr)     = "(arrayLength " ++ (showExpr i arr) ++ ")"
 showExpr i (NewArray l)          = "(newArray " ++ (showExpr i l) ++ ")"
 showExpr i (ReadArray arr ix)    = "(readArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ ")"
 showExpr i (WriteArray arr ix a) = "(writeArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ " " ++ (showExpr i a) ++ ")"
 showExpr i (ParM n f) = "(parM " ++ (showExpr i n) ++ " " ++ (showExprFun i f) ++ ")"
 showExpr i Skip = "skip"
 showExpr i (Print a) = "(print " ++ (showExpr i a) ++ ")"
+showExpr i (Let e f) = "(let x" ++ (show i) ++ " = " ++ (showExpr (i+1) e) ++ " in " ++ (showExpr (i+1) (f (Var i))) ++ ")"
 
 
 showExprFun :: Int -> (Expr a -> Expr b) -> String
@@ -238,6 +273,8 @@ translate (Snd a) = [| snd $(translate a) |]
 
 translate (Return a) = [|return $(translate a)|]
 translate (Bind m f) = [| $(translate m)  >>= $(trans f) |]
+
+translate (RunMutableArray arr) = [| unsafePerformIO ($(translate arr) >>= unsafeFreeze) |]
 
 translate (NewArray l)          = [| newIOUArray (0, $(translate (l-1))) |]
 translate (ReadArray arr ix)    = [| readArray $(translate arr) $(translate ix) |]
@@ -290,6 +327,8 @@ liftFun f = externalize . f . internalize
 liftFun2 :: (Computable a, Computable b, Computable c) => (Expr (Internal a) -> Expr (Internal b) -> Expr (Internal c)) -> a -> b -> c
 liftFun2 f a b = externalize $ f (internalize a) (internalize b)
 
+let_ :: (Computable a, Computable b) => a -> (a -> b) -> b
+let_ a f = externalize (Let (internalize a) (lowerFun f))
 
 class Trans a where
   trans :: a -> Q Exp
