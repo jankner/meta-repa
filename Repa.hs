@@ -32,7 +32,7 @@ data Expr a where
   FromInteger :: Num a => Integer -> Expr a
 
   Quot :: Integral a => Expr a -> Expr a -> Expr a
-  Rem :: Integral a => Expr a -> Expr a -> Expr a 
+  Rem :: Integral a => Expr a -> Expr a -> Expr a
 
   And :: Expr Bool -> Expr Bool -> Expr Bool
   Or :: Expr Bool -> Expr Bool -> Expr Bool
@@ -63,7 +63,7 @@ data Expr a where
   RunMutableArray :: (MArray IOUArray a IO, IArray UArray a) => Expr (IO (IOUArray Int a)) -> Expr (UArray Int a)
   ReadIArray :: IArray UArray a => Expr (UArray Int a) -> Expr Int -> Expr a
   ArrayLength :: IArray UArray a => Expr (UArray Int a) -> Expr Int
-  
+
   NewArray   :: MArray IOUArray a IO => Expr Int -> Expr (IO (IOUArray Int a))
   ReadArray  :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
   WriteArray :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
@@ -73,11 +73,81 @@ data Expr a where
   Print :: Show a => Expr a -> Expr (IO ())
 
 
+
+data FOExpr a where
+  FOVar   :: Int -> FOExpr a
+  --FOVar2  :: Name -> FOExpr a
+  --FOValue :: a -> FOExpr a
+
+  FOBinop :: BOP a -> FOExpr a -> FOExpr a -> FOExpr a
+  FOAbs :: Num a => FOExpr a -> FOExpr a
+  FOSignum :: Num a => FOExpr a -> FOExpr a
+  FOFromInteger :: Num a => Integer -> FOExpr a
+
+  FOBoolLit :: Bool -> FOExpr Bool
+
+  FOCompare :: CompOp a -> FOExpr a -> FOExpr a -> FOExpr Bool
+
+  FOTup2 :: FOExpr a -> FOExpr b -> FOExpr (a,b)
+  FOFst :: FOExpr (a,b) -> FOExpr a
+  FOSnd :: FOExpr (a,b) -> FOExpr b
+
+  FOLet :: Int -> FOExpr a -> FOExpr b
+
+  FOLambda :: Int -> FOExpr b -> FOExpr (a -> b)
+
+  FOReturn :: FOExpr a -> FOExpr (IO a)
+  FOBind   :: FOExpr (IO a) -> FOExpr (a -> IO b) -> FOExpr (IO b)
+
+  FOIterateWhile :: FOExpr (s -> Bool) -> FOExpr (s -> s) -> FOExpr s -> FOExpr s
+  FOWhileM :: FOExpr (s -> Bool) -> FOExpr (s -> s) -> FOExpr (s -> IO ()) -> FOExpr s -> FOExpr (IO ())
+
+  FORunMutableArray :: (MArray IOUArray a IO, IArray UArray a) => FOExpr (IO (IOUArray Int a)) -> FOExpr (UArray Int a)
+  FOReadIArray :: IArray UArray a => FOExpr (UArray Int a) -> FOExpr Int -> FOExpr a
+  FOArrayLength :: IArray UArray a => FOExpr (UArray Int a) -> FOExpr Int
+
+  FONewArray   :: MArray IOUArray a IO => FOExpr Int -> FOExpr (IO (IOUArray Int a))
+  FOReadArray  :: MArray IOUArray a IO => FOExpr (IOUArray Int a) -> FOExpr Int -> FOExpr (IO a)
+  FOWriteArray :: MArray IOUArray a IO => FOExpr (IOUArray Int a) -> FOExpr Int -> FOExpr a -> FOExpr (IO ())
+  FOParM       :: FOExpr Int -> FOExpr (Int -> IO ()) -> FOExpr (IO ())
+  FOSkip       :: FOExpr (IO ())
+
+  FOPrint :: Show a => FOExpr a -> FOExpr (IO ())
+
+deriving instance Show (FOExpr a)
+
+data BOP a where
+  BOPlus  :: Num a => BOP a
+  BOMinus :: Num a => BOP a
+  BOMult  :: Num a => BOP a
+  BOQuot :: Integral a => BOP a
+  BORem  :: Integral a => BOP a
+  BOMin :: Ord a => BOP a
+  BOMax :: Ord a => BOP a
+  BOAnd :: BOP Bool
+  BOOr  :: BOP Bool
+
+deriving instance Show (BOP a)
+deriving instance Eq (BOP a)
+
+data CompOp a where
+  Equ  :: Eq a => CompOp a
+  NEqu :: Eq a => CompOp a
+  GThn :: Ord a => CompOp a
+  LThn :: Ord a => CompOp a
+  GEqu :: Ord a => CompOp a
+  LEqu :: Ord a => CompOp a
+
+deriving instance Show (CompOp a)
+deriving instance Eq (CompOp a)
+
 data Binop a where
   Plus  :: Binop a
   Mult  :: Binop a
   Minus :: Binop a
-  
+
+deriving instance Eq (Binop a)
+
 instance Num a => Num (Expr a) where
   (+) = Binop Plus
   (*) = Binop Mult
@@ -194,7 +264,7 @@ evalFun f = eval . f . Value
 while cond step s | cond s    = while cond step (step s)
                   | otherwise = s
 
-whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()    
+whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
 whileM cond step action s | cond s    = action s >> whileM cond step action (step s)
                           | otherwise = return ()
 
@@ -245,7 +315,7 @@ translate (Var2 n) = return $ VarE n
 
 translate (BoolLit b) = [| b |]
 
-translate (Binop op a b) = 
+translate (Binop op a b) =
   case op of
        Plus   -> [| $(e1) + $(e2) |]
        Minus -> [| $(e1) - $(e2) |]
@@ -263,7 +333,7 @@ translate (LTH a b) = [| $(translate a) <  $(translate b) |]
 translate (LTE a b) = [| $(translate a) <= $(translate b) |]
 translate (GTH a b) = [| $(translate a) >  $(translate b) |]
 translate (GTE a b) = [| $(translate a) >= $(translate b) |]
-                   
+
 translate (Max a b) = [| max $(translate a) $(translate b) |]
 translate (Min a b) = [| min $(translate a) $(translate b) |]
 
@@ -286,7 +356,7 @@ translate Skip       = [| return () |]
 translate (Print a)  = [| print $(translate a) |]
 
 translateFunction :: (Expr a -> Expr b) -> Q Exp
-translateFunction f = 
+translateFunction f =
   do x <- newName "x"
      fbody <- translate (f (Var2 x))
      return $ LamE [VarP x] fbody
@@ -344,4 +414,79 @@ instance (Computable a, Trans b) => Trans (a -> b) where
     x <- newName "x"
     fbody <- trans (f (externalize (Var2 x)))
     return $ LamE [VarP x] fbody
+
+
+
+toFOAS :: Expr a -> FOExpr a
+toFOAS = toFOAS' 0
+
+toFOAS' :: Int -> Expr a -> FOExpr a
+toFOAS' i (Var v) = FOVar v
+
+toFOAS' i (Binop op a b) =
+  case op of
+    Plus  -> FOBinop BOPlus  (toFOAS' i a) (toFOAS' i b)
+    Minus -> FOBinop BOMinus (toFOAS' i a) (toFOAS' i b)
+    Mult  -> FOBinop BOMult  (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (Abs a) = FOAbs (toFOAS' i a)
+toFOAS' i (Signum a) = FOSignum (toFOAS' i a)
+toFOAS' i (FromInteger n) = FOFromInteger n
+
+toFOAS' i (Quot a b) = FOBinop BOQuot (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (Rem  a b) = FOBinop BORem  (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (And  a b) = FOBinop BOAnd  (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (Or   a b) = FOBinop BOOr   (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (Min  a b) = FOBinop BOMin  (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (Max  a b) = FOBinop BOMax  (toFOAS' i a) (toFOAS' i b)
+
+toFOAS' i (Equal    a b) = FOCompare Equ  (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (NotEqual a b) = FOCompare NEqu (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (GTH      a b) = FOCompare GThn (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (LTH      a b) = FOCompare LThn (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (GTE      a b) = FOCompare GEqu (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (LTE      a b) = FOCompare LEqu (toFOAS' i a) (toFOAS' i b)
+
+toFOAS' i (Tup2 a b) = FOTup2 (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (Fst a) = FOFst (toFOAS' i a)
+toFOAS' i (Snd a) = FOSnd (toFOAS' i a)
+
+toFOAS' i (Let a f) = FOLet i (toFOAS' (i+1) (f (Var i)))
+
+toFOAS' i (Return a) = FOReturn (toFOAS' i a)
+toFOAS' i (Bind a f) = FOBind (toFOAS' i a) (toFOASFun i f)
+
+toFOAS' i (IterateWhile cond step init) =
+  FOIterateWhile
+    (toFOASFun i cond)
+    (toFOASFun i step)
+    (toFOAS' i init)
+toFOAS' i (WhileM cond step action init) =
+  FOWhileM
+    (toFOASFun i cond)
+    (toFOASFun i step)
+    (toFOASFun i action)
+    (toFOAS' i init)
+
+toFOAS' i (RunMutableArray a) = FORunMutableArray (toFOAS' i a)
+toFOAS' i (ReadIArray a b) = FOReadIArray (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (ArrayLength a) = FOArrayLength (toFOAS' i a)
+
+toFOAS' i (NewArray a) = FONewArray (toFOAS' i a)
+toFOAS' i (ReadArray a b) = FOReadArray  (toFOAS' i a) (toFOAS' i b)
+toFOAS' i (WriteArray a b c) = FOWriteArray (toFOAS' i a) (toFOAS' i b) (toFOAS' i c)
+
+toFOAS' i (ParM n f) = FOParM (toFOAS' i n) (toFOASFun i f)
+toFOAS' i (Skip) = FOSkip
+toFOAS' i (Print a) = FOPrint (toFOAS' i a)
+
+toFOASFun :: Int -> (Expr a -> Expr b) -> FOExpr (a -> b)
+toFOASFun i f = FOLambda i $ toFOAS' (i+1) $ f (Var i)
+
+
+isAtomic :: FOExpr a -> Bool
+isAtomic (FOVar _)         = True
+isAtomic (FOFromInteger _) = True
+isAtomic (FOBoolLit _)     = True
+isAtomic (FOSkip)          = True
+isAtomic _ = False
 
