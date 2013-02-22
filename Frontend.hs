@@ -18,7 +18,8 @@ import qualified Prelude as P
 import Prelude ((*),(+),(-),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
 import Control.Monad
 
-import Repa
+import Core
+import HOAS
 
 infix  4 ==
 infix  4 /=
