@@ -1,12 +1,15 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Types where
 
+import Data.IORef
 import qualified Data.Map as M
 import qualified Data.Set as S
 
 
 data Class = CEq | COrd | CNum | CIntegral | CShow
   deriving (Eq,Ord,Show)
+
+type TRef = IORef (Maybe Type)
 
 data Type = TVar TypeVar
           | TConst TypeConst
@@ -15,7 +18,7 @@ data Type = TVar TypeVar
           | TIArr Type
           | TFun Type Type
           | TIO Type
-  deriving (Eq)
+  deriving (Eq,Ord)
 
 instance Show Type where
   showsPrec d (TVar v) = shows v
@@ -26,14 +29,25 @@ instance Show Type where
   showsPrec d (TFun t1 t2) = showParen (d > 9) $ showsPrec 10 t1 . showString " -> " . showsPrec 10 t2
   showsPrec d (TIO t) = showParen (d > 10) $ showString "IO " . showsPrec 11 t
 
-newtype TypeVar = TypeVar Int
-  deriving (Eq,Ord,Num)
+data TypeVar = TypeVar Int TRef
+  deriving Eq
+
+instance Ord TypeVar where
+  compare (TypeVar v1 _) (TypeVar v2 _) = compare v1 v2
+
+type Uniq = Int
+
+uniq :: TypeVar -> Uniq
+uniq (TypeVar v _) = v
+
+tRef :: TypeVar -> TRef
+tRef (TypeVar _ ref) = ref
 
 instance Show TypeVar where
-  show (TypeVar v) = "a" ++ (show v)
+  show (TypeVar v _) = "a" ++ (show v)
 
 data TypeConst = TBool | TInt | TUnit
-  deriving Eq
+  deriving (Eq,Ord)
 
 instance Show TypeConst where
   show TInt  = "Int"
@@ -66,5 +80,5 @@ infixr 9 |.|
 s1 |.| s2 = M.unionWith f s1 s2
   where f t1 t2 = applySubst s1 t2
 
-type SortContext = M.Map TypeVar (S.Set Class)
+type SortContext = M.Map Uniq (S.Set Class)
 

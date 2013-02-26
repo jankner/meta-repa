@@ -4,6 +4,7 @@ module Core where
 import FOAS (reducel3,reducel4,isAtomic)
 import qualified FOAS as FO
 import qualified HOAS as HO
+import qualified FOASCommon as FO
 
 
 

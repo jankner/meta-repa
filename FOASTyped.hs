@@ -1,6 +1,7 @@
-module FOAS where
+module FOASTyped where
 
 import FOASCommon
+import Types
 
 import Data.List
 import qualified Data.Map as M
@@ -13,6 +14,8 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
 
+
+
 data Expr =
   -- Int -> a
     Var Int
@@ -23,7 +26,7 @@ data Expr =
   -- Num a => a -> a
   | Signum Expr
   -- Num a => Integer -> Int ?
-  | FromInteger Integer
+  | FromInteger Integer Type
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -42,7 +45,7 @@ data Expr =
   | Let Int Expr Expr
   
   -- Int -> b -> (a -> b)
-  | Lambda Int Expr
+  | Lambda Int Type Expr
   
   -- a -> IO a
   | Return Expr
@@ -77,44 +80,14 @@ data Expr =
     deriving (Eq, Ord)
 
 
-exprFold :: ((Expr -> a) -> Expr -> a)
-         -> (a -> a -> a)
-         -> (a -> a -> a -> a)
-         -> (a -> a -> a -> a -> a)
-         -> Expr
-         -> a
-exprFold f g2 g3 g4 e = f (exprRec f g2 g3 g4) e
+-- General traversal
 
-exprRec :: ((Expr -> a) -> Expr -> a)
-        -> (a -> a -> a)
-        -> (a -> a -> a -> a)
-        -> (a -> a -> a -> a -> a)
-        -> Expr
-        -> a
-exprRec f g2 g3 g4 e@(Abs e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Fst e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Snd e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Signum e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Return e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(NewArray e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(RunMutableArray e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(ArrayLength e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Print e1) = exprFold f g2 g3 g4 e1
-
-exprRec f g2 g3 g4 e@(BinOp op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(Compare op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(Tup2 e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(Let v e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(Bind e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(ReadIArray e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(ReadArray e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(ParM e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-
-exprRec f g2 g3 g4 e@(IterateWhile e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
-exprRec f g2 g3 g4 e@(WriteArray e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
-
-exprRec f g2 g3 g4 e@(WhileM e1 e2 e3 e4) = g4 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3) (exprFold f g2 g3 g4 e4)
-
+exprTraverse0 :: Monad m
+              => ((Expr -> m Expr) -> Expr -> m Expr)
+              -> Expr
+              -> m Expr
+exprTraverse0 f = liftM fst . exprTraverse f' (const id)
+  where f' k = liftM (\x -> (x,())) . f (liftM fst . k)
 
 exprTraverse :: Monad m
              => ((Expr -> m (Expr,a)) -> Expr -> m (Expr,a))
@@ -131,7 +104,7 @@ exprTrav :: Monad m
 exprTrav f g e@(Abs e1) = liftM (Abs *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
-exprTrav f g e@(Lambda v e1) = liftM ((Lambda v) *** id) (exprTraverse f g e1)
+exprTrav f g e@(Lambda v t e1) = liftM ((Lambda v t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Signum e1) = liftM (Signum *** id) (exprTraverse f g e1)
 exprTrav f g e@(Return e1) = liftM (Return *** id) (exprTraverse f g e1)
 exprTrav f g e@(NewArray e1) = liftM (NewArray *** id) (exprTraverse f g e1)
@@ -172,10 +145,12 @@ reducel4 f a b c d = ((a `f` b) `f` c) `f` d
 
 isAtomic :: Expr -> Bool
 isAtomic (Var _)         = True
-isAtomic (FromInteger _) = True
+isAtomic (FromInteger _ _) = True
 isAtomic (BoolLit _)     = True
 isAtomic (Skip)          = True
 isAtomic _ = False
+
+-- CSE
 
 findMin :: IS.IntSet -> Maybe Int
 findMin s | IS.null s = Nothing
@@ -199,9 +174,6 @@ cse e = evalState (stuff e) (CSEState {exprMap = IM.empty, varCounter = 0x400000
              return eFinal
         exprSort = sortBy $ \(_,_,v1,_) (_,_,v2,_) -> compare v2 v1
 
---showStuff :: (Int,Expr,Int,Int) -> String
---showStuff (l,e,v,c) = "v: " ++ (showVar v)--"!(" ++ (show l) ++ ", " ++ (showVar v) ++ ", " ++ (show c) ++ ", " ++ (show e) ++ ")"
-
 
 thing :: (Expr -> CSEM (Expr,IS.IntSet)) -> Expr -> CSEM (Expr,IS.IntSet)
 thing f (Var v) = return (Var v, IS.singleton v)
@@ -209,18 +181,18 @@ thing f (Let v e1 e2) = do
   (e2',vs2) <- f e2
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
-  let e2Final = replaceExprs v exprs e2' -- trace ("exprs " ++ (show v) ++ ": " ++ (show exprs)) $ 
+  let e2Final = replaceExprs v exprs e2'
   put (st {exprMap = newMap})
   (e1',vs1) <- f e1
   v1 <- addExpr e1' vs1
   return (Let v (Var v1) e2Final, IS.difference (IS.union vs1 vs2) (IS.singleton v))
-thing f (Lambda v e) = do
+thing f (Lambda v t e) = do
   (e',vs) <- f e
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
-  let eFinal = replaceExprs v exprs e' -- trace ("exprs " ++ (show v) ++ ": " ++ (show exprs)) $ 
+  let eFinal = replaceExprs v exprs e'
   put (st {exprMap = newMap})
-  return (Lambda v eFinal, IS.difference vs (IS.singleton v))
+  return (Lambda v t eFinal, IS.difference vs (IS.singleton v))
 thing f e | isAtomic e = return (e, IS.empty)
 thing f e | otherwise  = do
   (e',vs) <- f e
@@ -289,6 +261,8 @@ addExpr e vs = do
       return v --trace ("l: " ++ (show l) ++ ", v: " ++ (showVar v) ++ ", e: " ++ (show e)) $ 
 
 
+-- Show
+
 instance Show Expr where
   showsPrec = showExpr
 
@@ -298,7 +272,7 @@ showExpr d (BinOp op a b)  = showBinOp d op a b
 showExpr d (Compare op a b) = showCompOp d op a b
 showExpr d (Abs a)         = showApp d "abs" [a]
 showExpr d (Signum a)      = showApp d "signum" [a]
-showExpr d (FromInteger n) = shows n
+showExpr d (FromInteger n t) = showParen (d > 0) $ shows n . showString " :: " . shows t
 showExpr d (BoolLit b)     = shows b
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]
@@ -317,7 +291,7 @@ showExpr d (ParM n f) = showApp d "parM" [n,f]
 showExpr d Skip = showString "skip"
 showExpr d (Print a) = showApp d "print" [a]
 showExpr d (Let v e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
-showExpr d (Lambda v e) = showString "(\\" . showsVar v . showString " -> " . showsPrec 0 e . showString ")"
+showExpr d (Lambda v t e) = showString "(\\" . showsVar v . showString " :: " . shows t . showString " -> " . showsPrec 0 e . showString ")"
 
 showApp :: Int -> String -> [Expr] -> ShowS
 showApp d f es = showParen (d > 10) $ showString f . foldr1 (.) (map ((showString " " .) . showsPrec 11) es)
