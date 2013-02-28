@@ -5,7 +5,14 @@ import FOAS (reducel3,reducel4,isAtomic)
 import qualified FOAS as FO
 import qualified HOAS as HO
 import qualified FOASCommon as FO
+import Types
 
+
+translateTConst :: HO.TypeConst a -> TypeConst
+translateTConst HO.TInt = TInt 
+translateTConst HO.TFloat = TFloat 
+translateTConst HO.TDouble = TDouble 
+translateTConst HO.TBool = TBool 
 
 
 toFOAS :: HO.Expr a -> FO.Expr
@@ -16,16 +23,16 @@ toFOAS (HO.Binop op a b) =
     HO.Plus  -> FO.BinOp FO.Plus  (toFOAS a) (toFOAS b)
     HO.Minus -> FO.BinOp FO.Minus (toFOAS a) (toFOAS b)
     HO.Mult  -> FO.BinOp FO.Mult  (toFOAS a) (toFOAS b)
+    HO.And   -> FO.BinOp FO.And  (toFOAS a) (toFOAS b)
+    HO.Or    -> FO.BinOp FO.Or   (toFOAS a) (toFOAS b)
+    HO.Min   -> FO.BinOp FO.Min  (toFOAS a) (toFOAS b)
+    HO.Max   -> FO.BinOp FO.Max  (toFOAS a) (toFOAS b)
 toFOAS (HO.Abs a) = FO.Abs (toFOAS a)
 toFOAS (HO.Signum a) = FO.Signum (toFOAS a)
-toFOAS (HO.FromInteger n) = FO.FromInteger n
+toFOAS (HO.FromInteger t n) = FO.FromInteger (translateTConst t) n
 
 toFOAS (HO.Quot a b) = FO.BinOp FO.Quot (toFOAS a) (toFOAS b)
 toFOAS (HO.Rem  a b) = FO.BinOp FO.Rem  (toFOAS a) (toFOAS b)
-toFOAS (HO.And  a b) = FO.BinOp FO.And  (toFOAS a) (toFOAS b)
-toFOAS (HO.Or   a b) = FO.BinOp FO.Or   (toFOAS a) (toFOAS b)
-toFOAS (HO.Min  a b) = FO.BinOp FO.Min  (toFOAS a) (toFOAS b)
-toFOAS (HO.Max  a b) = FO.BinOp FO.Max  (toFOAS a) (toFOAS b)
 
 toFOAS (HO.Equal    a b) = FO.Compare FO.EQU (toFOAS a) (toFOAS b)
 toFOAS (HO.NotEqual a b) = FO.Compare FO.NEQ (toFOAS a) (toFOAS b)
@@ -37,6 +44,9 @@ toFOAS (HO.LTE      a b) = FO.Compare FO.LEQ (toFOAS a) (toFOAS b)
 toFOAS (HO.Tup2 a b) = FO.Tup2 (toFOAS a) (toFOAS b)
 toFOAS (HO.Fst a) = FO.Fst (toFOAS a)
 toFOAS (HO.Snd a) = FO.Snd (toFOAS a)
+
+toFOAS (HO.TupN t) = FO.TupN (HO.tupMap toFOAS t)
+toFOAS (HO.GetN n a) = FO.GetN (HO.natToInt n) (toFOAS a)
 
 toFOAS (HO.Let a f) = FO.Let v (toFOAS a) e
   where e = toFOAS $ f (HO.Var v)

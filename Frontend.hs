@@ -19,7 +19,7 @@ import Prelude ((*),(+),(-),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
 import Control.Monad
 
 import Core
-import HOAS
+import HOAS hiding (Z)
 
 infix  4 ==
 infix  4 /=
@@ -50,16 +50,16 @@ a <= b = LTE a b
 a >= b = GTE a b
 
 max :: Ord a => Expr a -> Expr a -> Expr a
-max = Max
+max = Binop Max
 
 min :: Ord a => Expr a -> Expr a -> Expr a
-min = Min
+min = Binop Min
 
 (&&) :: Expr Bool -> Expr Bool -> Expr Bool
-a && b = And a b
+(&&) = Binop And
 
 (||) :: Expr Bool -> Expr Bool -> Expr Bool
-a || b = Or a b
+(||) = Binop Or
 
 quot :: Integral a => Expr a -> Expr a -> Expr a
 quot = Quot
@@ -162,7 +162,7 @@ instance P.Functor (Pull sh) where
 fromFunction :: (Shape sh -> a) -> Shape sh -> Pull sh a
 fromFunction ixf sh = Pull ixf sh
 
-storePull :: MArray IOUArray a IO => Pull sh (Expr a) -> M (Expr (IOUArray Length a))
+storePull :: Storable a => Pull sh (Expr a) -> M (Expr (IOUArray Length a))
 storePull (Pull ixf sh) = 
   do arr <- newArrayE (size sh)
      forShape sh (\i -> writeArrayE arr (toIndex sh i) (ixf i)) 
@@ -179,7 +179,7 @@ backpermute sh2 perm (Pull ixf sh1) = Pull (ixf . perm) sh2
 data Push sh a = Push ((Shape sh -> a -> M ()) -> M ()) (Shape sh)
 
 
-storePush :: MArray IOUArray a IO => Push sh (Expr a) -> M (Expr (IOUArray Length a))
+storePush :: Storable a => Push sh (Expr a) -> M (Expr (IOUArray Length a))
 storePush (Push m sh) =
   do arr <- newArrayE (size sh)
      m (\i a -> writeArrayE arr (toIndex sh i) a)
@@ -257,7 +257,7 @@ conc sel (Push m1 sh1) (Push m2 sh2) = Push m (adjustLength sel (+ selectLength 
               m2 (\sh a -> k (adjustLength sel (+ selectLength sel sh1) sh) a)
 
 
-force :: (MArray IOUArray a IO) => Push sh (Expr a) -> Push sh (Expr a)
+force :: Storable a => Push sh (Expr a) -> Push sh (Expr a)
 force (Push f l) = Push f' l
   where f' k = do arr <- newArrayE (size l)
                   f (\sh a -> writeArrayE arr (toIndex l sh) a)
@@ -265,23 +265,8 @@ force (Push f l) = Push f' l
                     a <- readArrayE arr (toIndex l ix)
                     k ix a
 
-fromShape :: Shape sh -> Expr (UArray Int Int)
-fromShape sh = runMutableArray $ do
-  arr <- newArrayE (P.fromInteger (P.toInteger (dim sh)))
-  forM (P.zip (toList sh) (P.map P.fromInteger [0..])) $ \(l,i) ->
-    writeArrayE arr i l
-  return arr
 
-
-instance (Shapely sh, MArray IOUArray a IO, IArray UArray a) => Computable (Pull sh (Expr a)) where
-  type Internal (Pull sh (Expr a)) = (UArray Int a, UArray Int Int)
-  internalize vec = internalize (runMutableArray (storePull vec), fromShape (extent vec))
-  externalize e = Pull (\ix -> let_ arr (\arr -> readIArray arr (toIndex sh ix))) sh
-    where (arr, dims) = externalize e
-          sh = toShape 0 dims
-
-
-forcePull :: (MArray IOUArray a IO, IArray UArray a) => Pull sh (Expr a) -> Pull sh (Expr a)
+forcePull :: Storable a => Pull sh (Expr a) -> Pull sh (Expr a)
 forcePull p@(Pull ixf sh) = Pull (\ix -> ixf' arr ix) sh
   where ixf' arr ix = readIArray arr (toIndex sh ix)
         arr = runMutableArray (storePull p)

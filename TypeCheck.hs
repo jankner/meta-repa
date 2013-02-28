@@ -115,7 +115,7 @@ infer Skip = return (TIO tUnit)
 infer (Var v) = do
   t <- lookupVar v
   return t
-infer (FromInteger i) = return tInt
+infer (FromInteger t i) = return (TConst t)
 infer (BoolLit b) = return tBool
 infer (Abs e) = do
   t <- infer e
@@ -346,7 +346,6 @@ occurs v _ = False
 zonkExpr :: T.Expr -> TC T.Expr
 zonkExpr = T.exprTraverse0 zonkExpr'
 
-zonkExpr' k (T.FromInteger i t) = liftM (T.FromInteger i) (zonkType t)
 zonkExpr' k (T.Lambda v t e) = do
   t' <- zonkType t
   e' <- k e
@@ -366,9 +365,7 @@ inferT1 Skip = return (T.Skip, TIO tUnit)
 inferT1 (Var v) = do
   t <- lookupVar v
   return (T.Var v, t)
-inferT1 (FromInteger i) = do
-  a <- newTVarOfClass CNum
-  return (T.FromInteger i a, a)
+inferT1 (FromInteger t i) = return (T.FromInteger t i, TConst t)
 inferT1 (BoolLit b) = return (T.BoolLit b, tBool)
 inferT1 (Abs e) = do
   (e',t) <- inferT1 e
@@ -511,7 +508,7 @@ runTC2 m = runReader (runErrorT (unTC2 m)) []
 inferT2 :: T.Expr -> TC2 Type
 inferT2 T.Skip = return (TIO tUnit)
 inferT2 (T.Var v) = lookupVar v
-inferT2 (T.FromInteger i t) = return t
+inferT2 (T.FromInteger t i) = return (TConst t)
 inferT2 (T.BoolLit b) = return tBool
 inferT2 (T.Abs e) = inferT2 e
 inferT2 (T.Signum e) = inferT2 e

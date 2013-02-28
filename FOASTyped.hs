@@ -26,7 +26,7 @@ data Expr =
   -- Num a => a -> a
   | Signum Expr
   -- Num a => Integer -> Int ?
-  | FromInteger Integer Type
+  | FromInteger TypeConst Integer
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -272,7 +272,7 @@ showExpr d (BinOp op a b)  = showBinOp d op a b
 showExpr d (Compare op a b) = showCompOp d op a b
 showExpr d (Abs a)         = showApp d "abs" [a]
 showExpr d (Signum a)      = showApp d "signum" [a]
-showExpr d (FromInteger n t) = showParen (d > 0) $ shows n . showString " :: " . shows t
+showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
 showExpr d (BoolLit b)     = shows b
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]

@@ -1,6 +1,7 @@
 module FOAS where
 
 import FOASCommon
+import Types
 
 import Data.List
 import qualified Data.Map as M
@@ -23,7 +24,7 @@ data Expr =
   -- Num a => a -> a
   | Signum Expr
   -- Num a => Integer -> Int ?
-  | FromInteger Integer
+  | FromInteger TypeConst Integer
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -37,6 +38,10 @@ data Expr =
   | Fst Expr
   -- (a,b) -> b
   | Snd Expr
+
+  | TupN [Expr]
+
+  | GetN Int Expr
   
   -- Int -> a -> b -> b
   | Let Int Expr Expr
@@ -171,10 +176,10 @@ reducel4 :: (a -> a -> a) -> a -> a -> a -> a -> a
 reducel4 f a b c d = ((a `f` b) `f` c) `f` d
 
 isAtomic :: Expr -> Bool
-isAtomic (Var _)         = True
-isAtomic (FromInteger _) = True
-isAtomic (BoolLit _)     = True
-isAtomic (Skip)          = True
+isAtomic (Var _)           = True
+isAtomic (FromInteger _ _) = True
+isAtomic (BoolLit _)       = True
+isAtomic (Skip)            = True
 isAtomic _ = False
 
 findMin :: IS.IntSet -> Maybe Int
@@ -282,11 +287,11 @@ addExpr e vs = do
   case x of
     Just (v,_) -> do
       put (st {exprMap = IM.insert l newSubMap map})
-      return v --trace ("l: " ++ (show l) ++ ", v: " ++ (showVar v) ++ ", c: " ++ (show $ snd (fromJust $ M.lookup e newSubMap)) ++ ", e: " ++ (show e)) $ 
+      return v
     Nothing  -> do
       let v = varCounter st
       put (st {exprMap = IM.insert l newSubMap map, varCounter = v + 1})
-      return v --trace ("l: " ++ (show l) ++ ", v: " ++ (showVar v) ++ ", e: " ++ (show e)) $ 
+      return v
 
 
 instance Show Expr where
@@ -296,13 +301,15 @@ showExpr :: Int -> Expr -> ShowS
 showExpr d (Var v) = showsVar v
 showExpr d (BinOp op a b)  = showBinOp d op a b
 showExpr d (Compare op a b) = showCompOp d op a b
-showExpr d (Abs a)         = showApp d "abs" [a]
-showExpr d (Signum a)      = showApp d "signum" [a]
-showExpr d (FromInteger n) = shows n
-showExpr d (BoolLit b)     = shows b
-showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
+showExpr d (Abs a) = showApp d "abs" [a]
+showExpr d (Signum a) = showApp d "signum" [a]
+showExpr d (FromInteger t n) = shows n
+showExpr d (BoolLit b) = shows b
+showExpr d (Tup2 a b) = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]
 showExpr d (Snd a) = showApp d "fst" [a]
+showExpr d (TupN as) = showString "(" . showsTup as
+showExpr d (GetN n a) = showApp d ("get" ++ (show n)) [a]
 showExpr d (Return a) = showApp d "return" [a]
 showExpr d (Bind m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
 showExpr d (IterateWhile cond step init) = showApp d "iterateWhile" [cond,step,init]
@@ -318,6 +325,9 @@ showExpr d Skip = showString "skip"
 showExpr d (Print a) = showApp d "print" [a]
 showExpr d (Let v e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
 showExpr d (Lambda v e) = showString "(\\" . showsVar v . showString " -> " . showsPrec 0 e . showString ")"
+
+showsTup (a:[]) = showsPrec 0 a . showString ")"
+showsTup (a:as) = showsPrec 0 a . showString "," . showsTup as
 
 showApp :: Int -> String -> [Expr] -> ShowS
 showApp d f es = showParen (d > 10) $ showString f . foldr1 (.) (map ((showString " " .) . showsPrec 11) es)

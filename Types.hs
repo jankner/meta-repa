@@ -29,7 +29,7 @@ instance Show Type where
   showsPrec d (TFun t1 t2) = showParen (d > 9) $ showsPrec 10 t1 . showString " -> " . showsPrec 10 t2
   showsPrec d (TIO t) = showParen (d > 10) $ showString "IO " . showsPrec 11 t
 
-data TypeVar = TypeVar Int TRef
+data TypeVar = TypeVar Uniq TRef
   deriving Eq
 
 instance Ord TypeVar where
@@ -46,15 +46,23 @@ tRef (TypeVar _ ref) = ref
 instance Show TypeVar where
   show (TypeVar v _) = "a" ++ (show v)
 
-data TypeConst = TBool | TInt | TUnit
+data TypeConst = TInt
+               | TFloat
+               | TDouble
+               | TBool
+               | TUnit
   deriving (Eq,Ord)
 
 instance Show TypeConst where
-  show TInt  = "Int"
+  show TInt = "Int"
+  show TFloat = "Float"
+  show TDouble = "Double"
   show TBool = "Bool"
   show TUnit = "()"
 
-tInt  = TConst TInt
+tInt = TConst TInt
+tFloat = TConst TFloat
+tDouble = TConst TDouble
 tBool = TConst TBool
 tUnit = TConst TUnit
 

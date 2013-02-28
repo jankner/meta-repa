@@ -2,6 +2,9 @@
 {-# LANGUAGE GADTs, RankNTypes, FlexibleContexts, FlexibleInstances, TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE UndecidableInstances #-}
 module HOAS where
 
 
@@ -11,6 +14,7 @@ import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Array.Unsafe
 
+import Data.Word
 import Data.List
 import Data.Maybe
 
@@ -23,22 +27,113 @@ import System.IO.Unsafe
 
 import Language.Haskell.TH
 
+data TypeConst a where
+  TInt :: TypeConst Int
+  TDouble :: TypeConst Double
+  TFloat :: TypeConst Float
+  TBool :: TypeConst Bool
+
+deriving instance Show (TypeConst a)
+
+class (MArray IOUArray a IO, IArray UArray a) => Storable a where
+  typeOf :: a -> TypeConst a
+  typeOf0 :: TypeConst a
+
+instance Storable Int where
+  typeOf _ = TInt
+  typeOf0 = TInt
+
+instance Storable Double where
+  typeOf _ = TDouble
+  typeOf0 = TDouble
+
+instance Storable Float where
+  typeOf _ = TFloat
+  typeOf0 = TFloat
+
+instance Storable Bool where
+  typeOf _ = TBool
+  typeOf0 = TBool
+
+data Z = Z
+data S n = S n
+
+nat1 = S Z
+nat2 = S nat1
+nat3 = S nat2
+nat4 = S nat3
+nat5 = S nat4
+nat6 = S nat5
+nat7 = S nat6
+nat8 = S nat7
+nat9 = S nat8
+
+class Nat n where
+  natToInt :: n -> Int
+
+instance Nat Z where
+  natToInt _ = 0
+
+instance Nat n => Nat (S n) where
+  natToInt (S n) = 1 + natToInt n
+
+class Tup (t :: (* -> *) -> *) where
+  --type Head t
+  tupLen :: t m -> Int
+  tupMap :: (forall a. m a -> b) -> t m -> [b]
+  --tupHead :: t -> Head t
+
+infixr 3 ::.
+
+newtype Id t = Id { unId :: t}
+
+data Ein a m = Ein (m a)
+  deriving Show
+data Cons a as m = (m a) ::. (as m)
+  deriving Show
+
+instance Tup (Ein a) where
+  tupLen _ = 1
+  tupMap f (Ein a) = [f a]
+
+instance Tup as => Tup (Cons a as) where
+  tupLen (a ::. as) = 1 + tupLen as
+  tupMap f (a ::. as) = f a : (tupMap f as)
+
+tupTail :: Tup as => (Cons a as m) -> as m
+tupTail (a ::. as) = as
+
+class (Nat n, Tup t) => Get n t m a | n t -> a where
+  tupGet :: n -> t m -> m a
+
+instance Get Z (Ein a) m a where
+  tupGet Z (Ein a) = a
+
+instance Tup as => Get Z (Cons a as) m a where
+  tupGet Z (a ::. as) = a
+
+instance Get n as m b => Get (S n) (Cons a as) m b where
+  tupGet (S n) (a ::. as) = tupGet n as
+
+
+
+instance Show (Expr a) where
+  show = showExpr 0
 
 data Expr a where
   Var   :: Int -> Expr a
   Var2  :: Name -> Expr a
   Value :: a -> Expr a
 
-  Binop :: Num a => Binop a -> Expr a -> Expr a -> Expr a
+  Binop :: Binop a -> Expr a -> Expr a -> Expr a
   Abs :: Num a => Expr a -> Expr a
   Signum :: Num a => Expr a -> Expr a
-  FromInteger :: Num a => Integer -> Expr a
+  FromInteger :: Num a => TypeConst a -> Integer -> Expr a
+  FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
 
   Quot :: Integral a => Expr a -> Expr a -> Expr a
   Rem :: Integral a => Expr a -> Expr a -> Expr a
 
-  And :: Expr Bool -> Expr Bool -> Expr Bool
-  Or :: Expr Bool -> Expr Bool -> Expr Bool
   BoolLit :: Bool -> Expr Bool
 
   Equal :: Eq a => Expr a -> Expr a -> Expr Bool
@@ -48,12 +143,13 @@ data Expr a where
   LTH :: Ord a => Expr a -> Expr a -> Expr Bool
   GTE :: Ord a => Expr a -> Expr a -> Expr Bool
   LTE :: Ord a => Expr a -> Expr a -> Expr Bool
-  Min :: Ord a => Expr a -> Expr a -> Expr a
-  Max :: Ord a => Expr a -> Expr a -> Expr a
 
   Tup2 :: Expr a -> Expr b -> Expr (a,b)
   Fst :: Expr (a,b) -> Expr a
   Snd :: Expr (a,b) -> Expr b
+
+  TupN :: (Tup t) => t Expr -> Expr (t Id)
+  GetN :: (Get n t Expr b) => n -> Expr (t Id) -> Expr b
 
   Let :: Expr a -> (Expr a -> Expr b) -> Expr b
 
@@ -63,36 +159,43 @@ data Expr a where
   IterateWhile :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> Expr s -> Expr s
   WhileM :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> (Expr s -> Expr (IO ())) -> Expr s -> Expr (IO ())
 
-  RunMutableArray :: (MArray IOUArray a IO, IArray UArray a) => Expr (IO (IOUArray Int a)) -> Expr (UArray Int a)
-  ReadIArray :: IArray UArray a => Expr (UArray Int a) -> Expr Int -> Expr a
-  ArrayLength :: IArray UArray a => Expr (UArray Int a) -> Expr Int
+  RunMutableArray :: Storable a => Expr (IO (IOUArray Int a)) -> Expr (UArray Int a)
+  ReadIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
+  ArrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
 
-  NewArray   :: MArray IOUArray a IO => Expr Int -> Expr (IO (IOUArray Int a))
-  ReadArray  :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
-  WriteArray :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
+  NewArray   :: Storable a => Expr Int -> Expr (IO (IOUArray Int a))
+  ReadArray  :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
+  WriteArray :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
   ParM       :: Expr Int -> (Expr Int -> Expr (IO ())) -> Expr (IO ())
   Skip       :: Expr (IO ())
 
   Print :: Show a => Expr a -> Expr (IO ())
 
 
-
-
-
 data Binop a where
-  Plus  :: Binop a
-  Mult  :: Binop a
-  Minus :: Binop a
+  Plus  :: Num a => Binop a
+  Mult  :: Num a => Binop a
+  Minus :: Num a => Binop a
+  Min   :: Ord a => Binop a
+  Max   :: Ord a => Binop a
+  And   :: Binop Bool
+  Or    :: Binop Bool
 
 deriving instance Eq (Binop a)
 
-instance Num a => Num (Expr a) where
+instance (Storable a, Num a) => Num (Expr a) where
   (+) = Binop Plus
   (*) = Binop Mult
   (-) = Binop Minus
   abs = Abs
   signum = Signum
-  fromInteger = FromInteger
+  fromInteger = FromInteger typeOf0
+
+
+instance Fractional (Expr Double) where
+  (/) = undefined
+  recip = undefined
+  fromRational = FromRational typeOf0
 
 
 data M a = M { unM :: forall b. ((a -> Expr (IO b)) -> Expr (IO b)) }
@@ -107,23 +210,23 @@ instance Functor M where
 runM :: M (Expr a) -> Expr (IO a)
 runM (M f) = f Return
 
-newArrayE :: MArray IOUArray a IO => Expr Int -> M (Expr (IOUArray Int a))
+newArrayE :: Storable a => Expr Int -> M (Expr (IOUArray Int a))
 newArrayE i = M (\k -> NewArray i `Bind` k)
 
 parM :: Expr Int -> (Expr Int -> M ()) -> M ()
 parM l body = M (\k -> ParM l (\i -> unM (body i) (\() -> Skip))
                        `Bind` (\_ -> k ()))
 
-writeArrayE :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> Expr a -> M ()
+writeArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> M ()
 writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` (\_ -> k ()))
 
-readArrayE :: MArray IOUArray a IO => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
+readArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
 readArrayE arr i = M (\k -> ReadArray arr i `Bind` k)
 
-readIArray :: IArray UArray a => Expr (UArray Int a) -> Expr Int -> Expr a
+readIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
 readIArray arr i = ReadIArray arr i
 
-arrayLength :: IArray UArray a => Expr (UArray Int a) -> Expr Int
+arrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
 arrayLength arr = ArrayLength arr
 
 
@@ -135,7 +238,7 @@ whileE :: Computable st => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st
 whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (\a -> unM ((action . externalize) a) (\() -> Skip)) (internalize init)
                                         `Bind` (\_ -> k ()))
 
-runMutableArray :: (MArray IOUArray a IO, IArray UArray a) => M (Expr (IOUArray Int a)) -> Expr (UArray Int a)
+runMutableArray :: Storable a => M (Expr (IOUArray Int a)) -> Expr (UArray Int a)
 runMutableArray m = RunMutableArray (runM m)
 
 
@@ -144,12 +247,17 @@ runMutableArray m = RunMutableArray (runM m)
 eval :: Expr a -> a
 eval (Value a) = a
 
-eval (Binop Plus   a b) = (eval a) + (eval b)
-eval (Binop Minus a b) = (eval a) - (eval b)
-eval (Binop Mult  a b) = (eval a) * (eval b)
+eval (Binop Plus  a b) = eval a + eval b
+eval (Binop Minus a b) = eval a - eval b
+eval (Binop Mult  a b) = eval a * eval b
+eval (Binop Max a b) = max (eval a) (eval b)
+eval (Binop Min a b) = min (eval a) (eval b)
+eval (Binop And a b) = eval a && eval b
+eval (Binop Or  a b) = eval a || eval b
+
 eval (Abs a) = abs (eval a)
 eval (Signum a) = signum (eval a)
-eval (FromInteger i) = fromInteger i
+eval (FromInteger t i) = fromInteger i
 
 eval (Equal a b) = (eval a) == (eval b)
 eval (NotEqual a b) = (eval a) /= (eval b)
@@ -158,9 +266,6 @@ eval (LTH a b) = (eval a) <  (eval b)
 eval (LTE a b) = (eval a) <= (eval b)
 eval (GTH a b) = (eval a) >  (eval b)
 eval (GTE a b) = (eval a) >= (eval b)
-
-eval (Max a b) = max (eval a) (eval b)
-eval (Min a b) = min (eval a) (eval b)
 
 eval (Tup2 a b) = (eval a, eval b)
 eval (Fst a) = fst (eval a)
@@ -201,7 +306,8 @@ showExpr i (Var v) = "x" ++ (show v)
 showExpr i (Binop op a b)  = "(" ++ (showBinOp i op a b) ++ ")"
 showExpr i (Abs a)         = "(abs " ++ (showExpr i a) ++ ")"
 showExpr i (Signum a)      = "(signum " ++ (showExpr i a) ++ ")"
-showExpr i (FromInteger n) = show n
+showExpr i (FromInteger t n) = show n
+showExpr i (FromRational t r) = "(fromRational " ++ (show r) ++ ")"
 showExpr i (BoolLit b)     = show b
 showExpr i (Equal a b)     = "(" ++ (showExpr i a) ++ " == " ++ (showExpr i b) ++ ")"
 showExpr i (NotEqual a b)     = "(" ++ (showExpr i a) ++ " /= " ++ (showExpr i b) ++ ")"
@@ -209,8 +315,6 @@ showExpr i (LTH a b)     = "(" ++ (showExpr i a) ++ " < " ++ (showExpr i b) ++ "
 showExpr i (LTE a b)     = "(" ++ (showExpr i a) ++ " <= " ++ (showExpr i b) ++ ")"
 showExpr i (GTH a b)     = "(" ++ (showExpr i a) ++ " > " ++ (showExpr i b) ++ ")"
 showExpr i (GTE a b)     = "(" ++ (showExpr i a) ++ " >= " ++ (showExpr i b) ++ ")"
-showExpr i (Max a b)     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
-showExpr i (Min a b)     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 showExpr i (Tup2 a b)    = "(" ++ (showExpr i a) ++ ", " ++ (showExpr i b) ++ ")"
 showExpr i (Fst a) = "(fst " ++ (showExpr i a) ++ ")"
 showExpr i (Snd a) = "(snd " ++ (showExpr i a) ++ ")"
@@ -236,6 +340,8 @@ showBinOp :: Int -> Binop a -> Expr a -> Expr a -> String
 showBinOp i Minus a b = (showExpr i a) ++ " - " ++ (showExpr i b)
 showBinOp i Plus  a b = (showExpr i a) ++ " + " ++ (showExpr i b)
 showBinOp i Mult  a b = (showExpr i a) ++ " * " ++ (showExpr i b)
+showBinOp i Max a b     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
+showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 
 
 translate :: Expr a -> Q Exp
@@ -248,11 +354,13 @@ translate (Binop op a b) =
        Plus   -> [| $(e1) + $(e2) |]
        Minus -> [| $(e1) - $(e2) |]
        Mult  -> [| $(e1) * $(e2) |]
+       Max -> [| max $(translate a) $(translate b) |]
+       Min -> [| min $(translate a) $(translate b) |]
   where e1 = translate a
         e2 = translate b
 translate (Abs a) = [| abs $(translate a) |]
 translate (Signum a) = [| signum $(translate a) |]
-translate (FromInteger n) = [| n |]
+translate (FromInteger t n) = [| n |]
 
 translate (Equal a b) = [| $(translate a) == $(translate b) |]
 translate (NotEqual a b) = [| $(translate a) /= $(translate b) |]
@@ -261,9 +369,6 @@ translate (LTH a b) = [| $(translate a) <  $(translate b) |]
 translate (LTE a b) = [| $(translate a) <= $(translate b) |]
 translate (GTH a b) = [| $(translate a) >  $(translate b) |]
 translate (GTE a b) = [| $(translate a) >= $(translate b) |]
-
-translate (Max a b) = [| max $(translate a) $(translate b) |]
-translate (Min a b) = [| min $(translate a) $(translate b) |]
 
 translate (Tup2 a b) = [| ($(translate a), $(translate b)) |]
 translate (Fst a) = [| fst $(translate a) |]
@@ -289,7 +394,7 @@ translateFunction f =
      fbody <- translate (f (Var2 x))
      return $ LamE [VarP x] fbody
 
-newIOUArray :: MArray IOUArray a IO => (Int, Int) -> IO (IOUArray Int a)
+newIOUArray :: Storable a => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
 
 
@@ -308,6 +413,33 @@ instance (Computable a, Computable b) => Computable (a, b) where
   type Internal (a,b) = (Internal a, Internal b)
   internalize (a,b) = Tup2 (internalize a) (internalize b)
   externalize a = (externalize (Fst a), externalize (Snd a))
+
+
+instance (Computable a0, Computable a1, Computable a2,
+          Computable a3, Computable a4, Computable a5,
+          Computable a6, Computable a7, Computable a8) => Computable (a0,a1,a2,a3,a4,a5,a6,a7,a8) where
+  type Internal (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
+       Cons (Internal a0) (Cons (Internal a1) (Cons (Internal a2)
+      (Cons (Internal a3) (Cons (Internal a4) (Cons (Internal a5)
+      (Cons (Internal a6) (Cons (Internal a7) (Ein  (Internal a8))))))))) Id
+  internalize (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
+    TupN ((internalize a0) ::. (internalize a1) ::. (internalize a2) ::.
+          (internalize a3) ::. (internalize a4) ::. (internalize a5) ::.
+          (internalize a6) ::. (internalize a7) ::. (Ein (internalize a8)))
+  externalize t = (externalize (GetN Z   t), externalize (GetN nat1 t),
+                   externalize (GetN nat2 t), externalize (GetN nat3 t),
+                   externalize (GetN nat4 t), externalize (GetN nat5 t),
+                   externalize (GetN nat6 t), externalize (GetN nat7 t),
+                   externalize (GetN nat8 t))
+
+{-
+instance Computable (Expr a0,Expr a1,Expr a2,Expr a3,Expr a4,Expr a5,Expr a6,Expr a7,Expr a8) where
+  type Internal (Expr a0,Expr a1,Expr a2,Expr a3,Expr a4,Expr a5,Expr a6,Expr a7,Expr a8) =
+      Cons a0 (Cons a1 (Cons a2 (Cons a3 (Cons a4 (Cons a5 (Cons a6 (Cons a7 (Ein a8)))))))) Id
+  internalize (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
+    TupN (a0 ::. a1 ::. a2 ::.  a3 ::. a4 ::. a5 ::.  a6 ::. a7 ::. (Ein a8))
+  externalize t = (GetN Z t,GetN nat1 t,GetN nat2 t,GetN nat3 t,GetN nat4 t,GetN nat5 t,GetN nat6 t,GetN nat7 t,GetN nat8 t)
+-}
 
 iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
 iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
