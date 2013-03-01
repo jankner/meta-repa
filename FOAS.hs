@@ -39,9 +39,11 @@ data Expr =
   -- (a,b) -> b
   | Snd Expr
 
+  -- [a1..an] -> (a1,..an)
   | TupN [Expr]
 
-  | GetN Int Expr
+  -- n -> m -> (a1,..am,..an) -> am
+  | GetN Int Int Expr
   
   -- Int -> a -> b -> b
   | Let Int Expr Expr
@@ -105,6 +107,7 @@ exprRec f g2 g3 g4 e@(NewArray e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(RunMutableArray e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(ArrayLength e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Print e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(GetN l n e1) = exprFold f g2 g3 g4 e1
 
 exprRec f g2 g3 g4 e@(BinOp op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Compare op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
@@ -119,6 +122,9 @@ exprRec f g2 g3 g4 e@(IterateWhile e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (expr
 exprRec f g2 g3 g4 e@(WriteArray e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
 
 exprRec f g2 g3 g4 e@(WhileM e1 e2 e3 e4) = g4 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3) (exprFold f g2 g3 g4 e4)
+
+exprRec f g2 g3 g4 e@(TupN es) = foldl1 g2 (map (exprFold f g2 g3 g4) es)
+
 
 
 exprTraverse :: Monad m
@@ -143,6 +149,7 @@ exprTrav f g e@(NewArray e1) = liftM (NewArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(RunMutableArray e1) = liftM (RunMutableArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(ArrayLength e1) = liftM (ArrayLength *** id) (exprTraverse f g e1)
 exprTrav f g e@(Print e1) = liftM (Print *** id) (exprTraverse f g e1)
+exprTrav f g e@(GetN l n e1) = liftM ((GetN l n) *** id) (exprTraverse f g e1)
 
 exprTrav f g e@(BinOp op e1 e2) = liftM2 ((BinOp op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Compare op e1 e2) = liftM2 ((Compare op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
@@ -157,6 +164,9 @@ exprTrav f g e@(IterateWhile e1 e2 e3) = liftM3 (IterateWhile ***** (reducel3 g)
 exprTrav f g e@(WriteArray e1 e2 e3) = liftM3 (WriteArray ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
 
 exprTrav f g e@(WhileM e1 e2 e3 e4) = liftM4 (WhileM ****** (reducel4 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3) (exprTraverse f g e4)
+exprTrav f g e@(TupN es) =
+  do (es',as) <- liftM unzip $ mapM (exprTraverse f g) es
+     return (TupN es', foldl1 g as)
 exprTrav f g e = exprTraverse f g e
 
 
@@ -309,7 +319,7 @@ showExpr d (Tup2 a b) = showParen True $ showsPrec 0 a . showString ", " . shows
 showExpr d (Fst a) = showApp d "fst" [a]
 showExpr d (Snd a) = showApp d "fst" [a]
 showExpr d (TupN as) = showString "(" . showsTup as
-showExpr d (GetN n a) = showApp d ("get" ++ (show n)) [a]
+showExpr d (GetN l n a) = showApp d ("get" ++ (show l) ++ "_" ++ (show n)) [a]
 showExpr d (Return a) = showApp d "return" [a]
 showExpr d (Bind m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
 showExpr d (IterateWhile cond step init) = showApp d "iterateWhile" [cond,step,init]

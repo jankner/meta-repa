@@ -14,6 +14,7 @@ type TRef = IORef (Maybe Type)
 data Type = TVar TypeVar
           | TConst TypeConst
           | TTup2 Type Type
+          | TTupN [Type]
           | TMArr Type
           | TIArr Type
           | TFun Type Type

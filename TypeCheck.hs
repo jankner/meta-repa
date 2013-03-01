@@ -66,6 +66,9 @@ zonkType (TMArr t) = liftM TMArr (zonkType t)
 zonkType (TIArr t) = liftM TIArr (zonkType t)
 zonkType (TTup2 t1 t2) = liftM2 TTup2 (zonkType t1) (zonkType t2)
 zonkType (TFun  t1 t2) = liftM2 TFun  (zonkType t1) (zonkType t2)
+zonkType (TTupN ts) = do
+  ts <- mapM zonkType ts
+  return (TTupN ts)
 zonkType (TVar tv) = do
   mt <- readTVar tv
   case mt of
@@ -82,6 +85,9 @@ zonkType2 (TMArr t) = liftM TMArr (zonkType2 t)
 zonkType2 (TIArr t) = liftM TIArr (zonkType2 t)
 zonkType2 (TTup2 t1 t2) = liftM2 TTup2 (zonkType2 t1) (zonkType2 t2)
 zonkType2 (TFun  t1 t2) = liftM2 TFun  (zonkType2 t1) (zonkType2 t2)
+zonkType2 (TTupN ts) = do
+  ts <- mapM zonkType ts
+  return (TTupN ts)
 zonkType2 (TVar tv) = do
   mt <- readTVar tv
   case mt of
@@ -143,6 +149,14 @@ infer (Snd e) = do
   b <- newTypeVarT
   unify t (TTup2 a b)
   return b
+infer (TupN es) = do
+  ts <- mapM infer es
+  return (TTupN ts)
+infer (GetN n i e) = do
+  t <- infer e
+  tvs <- sequence (replicate n newTypeVarT)
+  unify t (TTupN tvs)
+  return (tvs !! i)
 infer (Let v e1 e2) = do
   t1 <- infer e1
   t2 <- addVar v t1 $ infer e2
@@ -275,16 +289,19 @@ classMatch :: Class -> Type -> Bool
 classMatch CEq (TConst TInt) = True
 classMatch CEq (TConst TBool) = True
 classMatch CEq (TTup2 t1 t2) = (classMatch CEq t1) && (classMatch CEq t2)
+classMatch CEq (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch CEq) ts)
 classMatch CEq (TConst TUnit) = True
 classMatch COrd (TConst TInt) = True
 classMatch COrd (TConst TBool) = True
 classMatch COrd (TTup2 t1 t2) = (classMatch COrd t1) && (classMatch COrd t2)
+classMatch COrd (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch COrd) ts)
 classMatch COrd (TConst TUnit) = True
 classMatch CNum (TConst TInt) = True
 classMatch CIntegral (TConst TInt) = True
 classMatch CShow (TConst TInt) = True
 classMatch CShow (TConst TBool) = True
 classMatch CShow (TTup2 t1 t2) = (classMatch CShow t1) && (classMatch CShow t2)
+classMatch CShow (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch CShow) ts)
 classMatch CShow (TConst TUnit) = True
 classMatch _ _ = False
 
@@ -307,6 +324,7 @@ unify (TTup2 t1 t2) (TTup2 s1 s2) = do
 unify (TFun t1 t2) (TFun s1 s2) = do
   unify t1 s1
   unify t2 s2
+unify (TTupN ts1) (TTupN ts2) = zipWithM_ unify ts1 ts2
 unify t s = throwError ("could not unify '" ++ (show t) ++ "' with '" ++ (show s) ++ "'.")
 
 
@@ -334,6 +352,7 @@ unifyUnbound tv1 t2 = do
       
 
 occurs :: TypeVar -> Type -> Bool
+occurs v (TConst c) = False
 occurs v (TVar v') | v == v' = True
                    | v /= v' = False
 occurs v (TMArr t) = occurs v t
@@ -341,7 +360,7 @@ occurs v (TIArr t) = occurs v t
 occurs v (TIO   t) = occurs v t
 occurs v (TTup2 t1 t2) = occurs v t1 || occurs v t2
 occurs v (TFun  t1 t2) = occurs v t1 || occurs v t2
-occurs v _ = False
+occurs v (TTupN ts) = foldl1 (||) (map (occurs v) ts)
 
 zonkExpr :: T.Expr -> TC T.Expr
 zonkExpr = T.exprTraverse0 zonkExpr'
@@ -393,6 +412,14 @@ inferT1 (Snd e) = do
   b <- newTypeVarT
   unify2 e t (TTup2 a b)
   return (T.Snd e',b)
+inferT1 (TupN es) = do
+  (es',ts) <- liftM unzip $ mapM inferT1 es
+  return (T.TupN es', TTupN ts)
+inferT1 (GetN n i e) = do
+  (e',t) <- inferT1 e
+  tvs <- sequence (replicate n newTypeVarT)
+  unify2 e t (TTupN tvs)
+  return (T.GetN n i e', tvs !! i)
 inferT1 (Let v e1 e2) = do
   (e1',t1) <- inferT1 e1
   (e2',t2) <- addVar v t1 $ inferT1 e2
@@ -523,6 +550,14 @@ inferT2 (T.Snd e) = do
   case t of
     TTup2 t1 t2 -> return t2
     t' -> throwError ("expected tuple, actual type: " ++ (show t'))
+inferT2 (T.TupN es) = do
+  ts <- mapM inferT2 es
+  return (TTupN ts)
+inferT2 (T.GetN n i e) = do
+  t <- inferT2 e
+  case t of
+    TTupN ts | length ts == n -> return (ts !! i)
+    t' -> throwError("expected tuple of size " ++ (show n) ++ ". actual type: " ++ (show t'))
 inferT2 (T.Let v e1 e2) = do
   t1 <- inferT2 e1
   t2 <- addVar v t1 $ inferT2 e2

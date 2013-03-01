@@ -7,6 +7,8 @@ import qualified HOAS as HO
 import qualified FOASCommon as FO
 import Types
 
+f :: (HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int) -> HO.Expr Int
+f (a,b,c,d,e,g,h,i,j) = d
 
 translateTConst :: HO.TypeConst a -> TypeConst
 translateTConst HO.TInt = TInt 
@@ -46,7 +48,7 @@ toFOAS (HO.Fst a) = FO.Fst (toFOAS a)
 toFOAS (HO.Snd a) = FO.Snd (toFOAS a)
 
 toFOAS (HO.TupN t) = FO.TupN (HO.tupMap toFOAS t)
-toFOAS (HO.GetN n a) = FO.GetN (HO.natToInt n) (toFOAS a)
+toFOAS (HO.GetN l n a) = FO.GetN l (HO.natToInt n) (toFOAS a)
 
 toFOAS (HO.Let a f) = FO.Let v (toFOAS a) e
   where e = toFOAS $ f (HO.Var v)

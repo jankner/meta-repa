@@ -77,12 +77,6 @@ instance Nat Z where
 instance Nat n => Nat (S n) where
   natToInt (S n) = 1 + natToInt n
 
-class Tup (t :: (* -> *) -> *) where
-  --type Head t
-  tupLen :: t m -> Int
-  tupMap :: (forall a. m a -> b) -> t m -> [b]
-  --tupHead :: t -> Head t
-
 infixr 3 ::.
 
 newtype Id t = Id { unId :: t}
@@ -92,13 +86,20 @@ data Ein a m = Ein (m a)
 data Cons a as m = (m a) ::. (as m)
   deriving Show
 
+class Tup (t :: (* -> *) -> *) where
+  tupLen :: t m -> Int
+  tupMap :: (forall a. m a -> b) -> t m -> [b]
+  tupFake :: t m
+
 instance Tup (Ein a) where
   tupLen _ = 1
   tupMap f (Ein a) = [f a]
+  tupFake = Ein undefined
 
 instance Tup as => Tup (Cons a as) where
   tupLen (a ::. as) = 1 + tupLen as
   tupMap f (a ::. as) = f a : (tupMap f as)
+  tupFake = undefined ::. tupFake
 
 tupTail :: Tup as => (Cons a as m) -> as m
 tupTail (a ::. as) = as
@@ -149,7 +150,7 @@ data Expr a where
   Snd :: Expr (a,b) -> Expr b
 
   TupN :: (Tup t) => t Expr -> Expr (t Id)
-  GetN :: (Get n t Expr b) => n -> Expr (t Id) -> Expr b
+  GetN :: (Get n t Expr b) => Int -> n -> Expr (t Id) -> Expr b
 
   Let :: Expr a -> (Expr a -> Expr b) -> Expr b
 
@@ -197,6 +198,10 @@ instance Fractional (Expr Double) where
   recip = undefined
   fromRational = FromRational typeOf0
 
+getN :: Get n t Expr b => n -> Expr (t Id) -> Expr b
+getN n et = GetN (tupLen (fake et)) n et
+  where fake :: Tup t => Expr (t Id) -> t Id
+        fake _ = tupFake
 
 data M a = M { unM :: forall b. ((a -> Expr (IO b)) -> Expr (IO b)) }
 
@@ -426,20 +431,12 @@ instance (Computable a0, Computable a1, Computable a2,
     TupN ((internalize a0) ::. (internalize a1) ::. (internalize a2) ::.
           (internalize a3) ::. (internalize a4) ::. (internalize a5) ::.
           (internalize a6) ::. (internalize a7) ::. (Ein (internalize a8)))
-  externalize t = (externalize (GetN Z   t), externalize (GetN nat1 t),
-                   externalize (GetN nat2 t), externalize (GetN nat3 t),
-                   externalize (GetN nat4 t), externalize (GetN nat5 t),
-                   externalize (GetN nat6 t), externalize (GetN nat7 t),
-                   externalize (GetN nat8 t))
+  externalize t = (externalize (getN Z   t), externalize (getN nat1 t),
+                   externalize (getN nat2 t), externalize (getN nat3 t),
+                   externalize (getN nat4 t), externalize (getN nat5 t),
+                   externalize (getN nat6 t), externalize (getN nat7 t),
+                   externalize (getN nat8 t))
 
-{-
-instance Computable (Expr a0,Expr a1,Expr a2,Expr a3,Expr a4,Expr a5,Expr a6,Expr a7,Expr a8) where
-  type Internal (Expr a0,Expr a1,Expr a2,Expr a3,Expr a4,Expr a5,Expr a6,Expr a7,Expr a8) =
-      Cons a0 (Cons a1 (Cons a2 (Cons a3 (Cons a4 (Cons a5 (Cons a6 (Cons a7 (Ein a8)))))))) Id
-  internalize (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
-    TupN (a0 ::. a1 ::. a2 ::.  a3 ::. a4 ::. a5 ::.  a6 ::. a7 ::. (Ein a8))
-  externalize t = (GetN Z t,GetN nat1 t,GetN nat2 t,GetN nat3 t,GetN nat4 t,GetN nat5 t,GetN nat6 t,GetN nat7 t,GetN nat8 t)
--}
 
 iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
 iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
