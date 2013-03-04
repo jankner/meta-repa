@@ -150,9 +150,9 @@ toList :: Shape sh -> [Expr Length]
 toList Z = []
 toList (sh :. i) = i : toList sh
 
-forShape :: Shape sh -> (Shape sh -> M ()) -> M ()
-forShape Z k = k Z
-forShape (sh :. l) k = forShape sh (\sh2 -> parM l (\i -> k (sh2 :. i)))
+forShape :: Shape sh -> (Expr Int -> M ()) -> M ()
+forShape Z k = k 0
+forShape sh k = parM (size sh) k
 
 data Pull sh a = Pull (Shape sh -> a) (Shape sh)
 
@@ -165,7 +165,7 @@ fromFunction ixf sh = Pull ixf sh
 storePull :: Storable a => Pull sh (Expr a) -> M (Expr (IOUArray Length a))
 storePull (Pull ixf sh) = 
   do arr <- newArrayE (size sh)
-     forShape sh (\i -> writeArrayE arr (toIndex sh i) (ixf i)) 
+     forShape sh (\i -> writeArrayE arr i (ixf (fromIndex sh i))) 
      P.return arr
 
 traverse :: Pull sh a -> (Shape sh -> Shape sh') -> ((Shape sh -> a) -> Shape sh' -> b) -> Pull sh' b
@@ -200,7 +200,8 @@ class Arr arr where
 
 instance Arr Pull where
   toPush (Pull ixf sh) = Push m sh
-    where m k = forShape sh (\i -> k i (ixf i))
+    where m k = forShape sh (\i -> let ish = fromIndex sh i
+                                   in  k ish (ixf ish))
   ixMap f (Pull ixf sh) = Pull (ixf . f) sh
   extent (Pull _ sh) = sh
 
@@ -214,10 +215,10 @@ index (Pull ixf s) = ixf
 
 scanS :: (Computable a, Computable b) => (a -> b -> a) -> a -> Pull (sh :. Expr Length) b -> Push (sh:.Expr Length) a
 scanS f z (Pull ixf (sh:.n)) = Push m (sh:.n+1)
-  where m k = forShape sh $ \sh -> 
+  where m k = forShape sh $ \i -> let ish = fromIndex sh i in
                 whileE (\(i,_) -> i < (n+1)) 
-                  (\(i,x) -> (i+1, x `f` (ixf (sh :. i))))
-                  (\(i,x) -> k (sh :. i) x)
+                  (\(i,x) -> (i+1, x `f` (ixf (ish :. i))))
+                  (\(i,x) -> k (ish :. i) x)
                   (0,z)
 
 foldS :: (Computable b, Computable a) => b -> (a -> b -> b) -> Pull (sh :. Expr Length) a -> Pull sh b
@@ -240,9 +241,10 @@ everyNPlusM n m k (sh :. i) = k (sh :. (i * n + m))
 
 interleave2' :: Pull (sh :. Expr Int) a -> Pull (sh :. Expr Int) a -> Push (sh :. Expr Int) a
 interleave2' (Pull ixf1 (sh1 :. l1)) (Pull ixf2 (sh2 :. l2)) = Push m sh
-  where m k = forShape (sh1:.l1) (\s@(sh :. i) ->
-                k (sh :. (i * 2)) (ixf1 s) >>
-                k (sh :. (i * 2 + 1)) (ixf2 s))
+  where m k = forShape (sh1:.l1) (\i -> case fromIndex (sh1:.l1) i of 
+                s@(sh :. i) ->
+                  k (sh :. (i * 2)) (ixf1 s) >>
+                  k (sh :. (i * 2 + 1)) (ixf2 s))
         sh  = sh1 :. (l1 + l2)
 
 
@@ -261,9 +263,9 @@ force :: Storable a => Push sh (Expr a) -> Push sh (Expr a)
 force (Push f l) = Push f' l
   where f' k = do arr <- newArrayE (size l)
                   f (\sh a -> writeArrayE arr (toIndex l sh) a)
-                  forShape l $ \ix -> do
-                    a <- readArrayE arr (toIndex l ix)
-                    k ix a
+                  forShape l $ \i -> do
+                    a <- readArrayE arr i
+                    k (fromIndex l i) a
 
 
 forcePull :: Storable a => Pull sh (Expr a) -> Pull sh (Expr a)
