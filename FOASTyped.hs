@@ -1,18 +1,34 @@
+{-# OPTIONS_GHC -fth #-}
+{-# LANGUAGE MagicHash #-}
 module FOASTyped where
 
 import FOASCommon
 import Types
+import Eval
+
+import Data.Array.IO hiding (unsafeFreeze)
+import Data.Array.MArray hiding (unsafeFreeze)
+import Data.Array.IArray
+import Data.Array.Unboxed
+import Data.Array.Unsafe
 
 import Data.List
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
 import qualified Data.IntSet as IS
 import Data.Maybe
+import Data.Ratio
 
 import Control.Arrow
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
+
+import qualified Language.Haskell.TH as TH
+import Language.Haskell.TH hiding (Type)
+import Language.Haskell.TH.Lib
+
+import GHC.Exts
 
 
 
@@ -330,4 +346,72 @@ showCompOp d GTH a b = showParen (d > 4) $ showsPrec 4 a . showString " > " . sh
 showCompOp d LTH a b = showParen (d > 4) $ showsPrec 4 a . showString " < " . showsPrec 4 b
 showCompOp d GEQ a b = showParen (d > 4) $ showsPrec 4 a . showString " >= " . showsPrec 4 b
 showCompOp d LEQ a b = showParen (d > 4) $ showsPrec 4 a . showString " <= " . showsPrec 4 b
+
+
+-- Translation
+
+translate :: Expr -> Q Exp
+translate (Var v) = dyn (showVar v)
+translate (BinOp op e1 e2) = translateBinOp op (translate e1) (translate e2)
+translate (Abs e) = [| abs $(translate e) |]
+translate (Signum e) = [| signum $(translate e) |]
+translate (FromInteger t i) = translateFromInteger t i
+translate (BoolLit b) = [| b |]
+translate (Compare op e1 e2) = translateCompOp op (translate e1) (translate e2)
+translate (Tup2 e1 e2) = tupE [translate e1, translate e2]
+translate (Fst e) = [| fst $(translate e) |]
+translate (Snd e) = [| snd $(translate e) |]
+translate (TupN es) = tupE (map translate es)
+translate (GetN n i e) =
+  do x <- newName "get"
+     let pat = tupP $ (replicate i wildP) ++ [varP x] ++ (replicate (n-i-1) wildP)
+     caseE (translate e) [match pat (normalB (varE x)) []]
+translate (Let v e1 e2) = letE [valD (varP v') (normalB (translate e1)) []] (translate e2)
+  where v' = mkName (showVar v)
+translate (Lambda v _ e1) = lam1E (varP v') (translate e1)
+  where v' = mkName (showVar v)
+translate (Return e) = [| return $(translate e) |]
+translate (Bind e1 e2) = [| $(translate e1) >>= $(translate e2) |]
+translate (IterateWhile cond step init) =
+  [| while $(translate cond) $(translate step) $(translate init) |]
+translate (WhileM cond step action init) =
+  [| whileM $(translate cond) $(translate step) $(translate action) $(translate init) |]
+translate (RunMutableArray e) = [| runMutableArray $(translate e) |]
+translate (ReadIArray e1 e2) = [| $(translate e1) ! $(translate e2) |]
+translate (ArrayLength e) = [| snd (bounds $(translate e)) + 1 |]
+translate (NewArray e) = [| newIOUArray (0,$(translate e)-1) |]
+translate (WriteArray e1 e2 e3) = [| writeArray $(translate e1) $(translate e2) $(translate e3) |]
+translate (ParM e1 e2) = [| parM $(translate e1) $(translate e2) |]
+translate Skip = [| return () |]
+translate (Print e) = [| print $(translate e) |]
+
+
+translateFromInteger :: TypeConst -> Integer -> Q Exp
+translateFromInteger TInt i = sigE [| i |] [t| Int |]
+translateFromInteger TFloat i = sigE [| i |] [t| Float |]
+translateFromInteger TDouble i = sigE [| i |] [t| Double |]
+      
+translateBinOp :: BinOp -> Q Exp -> Q Exp -> Q Exp
+translateBinOp Minus q1 q2 = [| $(q1) - $(q2) |]
+translateBinOp Plus  q1 q2 = [| $(q1) + $(q2) |]
+translateBinOp Mult  q1 q2 = [| $(q1) * $(q2) |]
+translateBinOp Min   q1 q2 = [| min $(q1) $(q2) |]
+translateBinOp Max   q1 q2 = [| max $(q1) $(q2) |]
+translateBinOp And   q1 q2 = [| $(q1) && $(q2) |]
+translateBinOp Or    q1 q2 = [| $(q1) || $(q2) |]
+
+translateCompOp :: CompOp -> Q Exp -> Q Exp -> Q Exp
+translateCompOp EQU q1 q2 = [| $(q1) == $(q2) |]
+translateCompOp NEQ q1 q2 = [| $(q1) /= $(q2) |]
+translateCompOp GTH q1 q2 = [| $(q1) >  $(q2) |]
+translateCompOp LTH q1 q2 = [| $(q1) <  $(q2) |]
+translateCompOp GEQ q1 q2 = [| $(q1) >= $(q2) |]
+translateCompOp LEQ q1 q2 = [| $(q1) <= $(q2) |]
+
+translateTypeConst :: TypeConst -> Q TH.Type
+translateTypeConst TInt = [t| Int |]
+translateTypeConst TFloat = [t| Float |]
+translateTypeConst TDouble =  [t| Double |]
+translateTypeConst TBool = [t| Bool |]
+translateTypeConst TUnit = [t| () |]
 
