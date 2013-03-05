@@ -309,6 +309,7 @@ type instance SliceShape (Any sh)             = sh
 type instance SliceShape (sl :.: Expr Length) = SliceShape sl
 type instance SliceShape (sl :.: All)         = SliceShape sl :. Expr Length
 
+
 class Slice ss where
   sliceOfFull :: ss -> Shape (FullShape ss) -> Shape (SliceShape ss)
   fullOfSlice :: ss -> Shape (SliceShape ss) -> Shape (FullShape ss)
@@ -328,4 +329,21 @@ instance Slice sl => Slice (sl :.: Expr Length) where
 instance Slice sl => Slice (sl :.: All) where
   sliceOfFull (sl :.: All) (sh :. s) = sliceOfFull sl sh :. s
   fullOfSlice (sl :.: All) (sh :. s) = fullOfSlice sl sh :. s
+
+
+-- | Duplicates part of a vector along a new dimension.
+replicate :: Slice sl
+          => sl -> Pull (SliceShape sl) a
+          -> Pull (FullShape  sl) a
+replicate sl vec
+ = backpermute (fullOfSlice sl (extent vec))
+               (sliceOfFull sl) vec
+
+-- | Extracts a slice from a vector.
+slice :: Slice sl
+      => Pull (FullShape sl) a
+      -> sl -> Pull (SliceShape sl) a
+slice vec sl
+ = backpermute (sliceOfFull sl (extent vec))
+               (fullOfSlice sl) vec
 
