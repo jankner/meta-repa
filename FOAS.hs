@@ -25,6 +25,8 @@ data Expr =
   | FromInteger TypeConst Integer
   -- Fractional a => Rational -> a
   | FromRational TypeConst Rational
+  -- (Integral a, Num b) => a -> b
+  | FromIntegral Type Expr
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -98,6 +100,7 @@ exprRec :: ((Expr -> a) -> Expr -> a)
         -> (a -> a -> a -> a -> a)
         -> Expr
         -> a
+exprRec f g2 g3 g4 e@(FromIntegral t e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(UnOp op e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Fst e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Snd e1) = exprFold f g2 g3 g4 e1
@@ -138,6 +141,7 @@ exprTrav :: Monad m
          -> (a -> a -> a)
          -> Expr
          -> m (Expr,a)
+exprTrav f g e@(FromIntegral t e1) = liftM ((FromIntegral t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(UnOp op e1) = liftM ((UnOp op) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
@@ -319,7 +323,8 @@ showExpr d (FromInteger t i) = shows i
 showExpr d (FromRational t r) =
   case t of
     TFloat  -> shows (fromRational r :: Float)
-    TDouble -> shows (fromRational r :: Float)
+    TDouble -> shows (fromRational r :: Double)
+showExpr d (FromIntegral t a) = showApp d "fromIntegral" [a]
 showExpr d (BoolLit b) = shows b
 showExpr d (Tup2 a b) = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]

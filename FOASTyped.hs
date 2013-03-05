@@ -30,6 +30,7 @@ import Language.Haskell.TH hiding (Type)
 import Language.Haskell.TH.Lib
 
 import GHC.Exts
+import GHC.Real
 
 
 
@@ -44,6 +45,8 @@ data Expr =
   | FromInteger TypeConst Integer
   -- Fractional a => Rational -> a
   | FromRational TypeConst Rational
+  -- (Integral a, Num b) => a -> b
+  | FromIntegral Type Expr
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -124,6 +127,7 @@ exprTrav :: Monad m
          -> (a -> a -> a)
          -> Expr
          -> m (Expr,a)
+exprTrav f g e@(FromIntegral t e1) = liftM ((FromIntegral t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(UnOp op e1) = liftM ((UnOp op) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
@@ -303,6 +307,11 @@ showExpr d (UnOp op a) =
 showExpr d (BinOp op a b)  = showBinOp d op a b
 showExpr d (Compare op a b) = showCompOp d op a b
 showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
+showExpr d (FromRational t r) =
+  case t of
+    TFloat  -> shows (fromRational r :: Float)
+    TDouble -> shows (fromRational r :: Double)
+showExpr d (FromIntegral t a) = showApp d "fromIntegral" [a]
 showExpr d (BoolLit b)     = shows b
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]
@@ -359,6 +368,8 @@ translate (Var v) = dyn (showVar v)
 translate (UnOp op e) = translateUnOp op (translate e)
 translate (BinOp op e1 e2) = translateBinOp op (translate e1) (translate e2)
 translate (FromInteger t i) = translateFromInteger t i
+translate (FromRational t (a :% b)) = sigE [| fromRational (a :% b) |] (translateTypeConst t)
+translate (FromIntegral t e) = sigE [| fromIntegral $(translate e) |] (translateType t)
 translate (BoolLit b) = [| b |]
 translate (Compare op e1 e2) = translateCompOp op (translate e1) (translate e2)
 translate (Tup2 e1 e2) = tupE [translate e1, translate e2]
@@ -404,6 +415,9 @@ translateBinOp :: BinOp -> Q Exp -> Q Exp -> Q Exp
 translateBinOp Minus q1 q2 = [| $(q1) - $(q2) |]
 translateBinOp Plus  q1 q2 = [| $(q1) + $(q2) |]
 translateBinOp Mult  q1 q2 = [| $(q1) * $(q2) |]
+translateBinOp Quot  q1 q2 = [| $(q1) `quot` $(q2) |]
+translateBinOp Rem   q1 q2 = [| $(q1) `rem` $(q2) |]
+translateBinOp FDiv  q1 q2 = [| $(q1) / $(q2) |]
 translateBinOp Min   q1 q2 = [| min $(q1) $(q2) |]
 translateBinOp Max   q1 q2 = [| max $(q1) $(q2) |]
 translateBinOp And   q1 q2 = [| $(q1) && $(q2) |]
@@ -424,3 +438,11 @@ translateTypeConst TDouble =  [t| Double |]
 translateTypeConst TBool = [t| Bool |]
 translateTypeConst TUnit = [t| () |]
 
+translateType :: Type -> Q TH.Type
+translateType (TConst tc) = translateTypeConst tc
+translateType (TFun  t1 t2) = [t| $(translateType t1) -> $(translateType t2) |]
+translateType (TTup2 t1 t2) = [t| ($(translateType t1), $(translateType t2)) |]
+--translateType (TTupN ts) = tupleT (map translateType ts)
+translateType (TMArr t) = [t| IOUArray Int $(translateType t) |]
+translateType (TIArr t) = [t| UArray Int $(translateType t) |]
+translateType (TIO   t) = [t| IO $(translateType t) |]

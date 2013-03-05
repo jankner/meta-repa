@@ -15,7 +15,7 @@ import Data.Array.IArray hiding (inRange,index)
 import Data.Array.Unboxed hiding (inRange,index)
 
 import qualified Prelude as P
-import Prelude ((*),(+),(-),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
+import Prelude (Num(..),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
 import Control.Monad
 
 import Core
@@ -73,6 +73,8 @@ true = BoolLit P.True
 false :: Expr Bool
 false = BoolLit P.False
 
+fromIntegral :: (Integral a, Num b, Typeable b) => Expr a -> Expr b
+fromIntegral = FromIntegral typeOf0
 
 
 type Index  = P.Int

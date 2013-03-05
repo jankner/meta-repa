@@ -7,15 +7,21 @@ import qualified HOAS as HO
 import qualified FOASCommon as FO
 import Types
 
-f :: (HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int,HO.Expr Int) -> HO.Expr Int
-f (a,b,c,d,e,g,h,i,j) = d
+
+translateType :: HO.Type a -> Type
+translateType (HO.TConst tc) = TConst (translateTConst tc)
+translateType (HO.TFun  t1 t2) = TFun  (translateType t1) (translateType t2)
+translateType (HO.TTup2 t1 t2) = TTup2 (translateType t1) (translateType t2)
+translateType (HO.TTupN ts) = TTupN (HO.tupMap translateType ts)
+translateType (HO.TMArr t) = TMArr (translateType t)
+translateType (HO.TIArr t) = TIArr (translateType t)
+translateType (HO.TIO   t) = TIO   (translateType t)
 
 translateTConst :: HO.TypeConst a -> TypeConst
 translateTConst HO.TInt = TInt 
 translateTConst HO.TFloat = TFloat 
 translateTConst HO.TDouble = TDouble 
 translateTConst HO.TBool = TBool 
-
 
 toFOAS :: HO.Expr a -> FO.Expr
 toFOAS (HO.Var v) = FO.Var v
@@ -37,6 +43,7 @@ toFOAS (HO.Signum a) = FO.UnOp FO.Signum (toFOAS a)
 toFOAS (HO.Recip a)  = FO.UnOp FO.Recip  (toFOAS a)
 toFOAS (HO.FromInteger  t i) = FO.FromInteger (translateTConst t) i
 toFOAS (HO.FromRational t r) = FO.FromRational (translateTConst t) r
+toFOAS (HO.FromIntegral t a) = FO.FromIntegral (translateType t) (toFOAS a)
 
 toFOAS (HO.Equal    a b) = FO.Compare FO.EQU (toFOAS a) (toFOAS b)
 toFOAS (HO.NotEqual a b) = FO.Compare FO.NEQ (toFOAS a) (toFOAS b)

@@ -122,6 +122,12 @@ infer (Var v) = do
   t <- lookupVar v
   return t
 infer (FromInteger t i) = return (TConst t)
+infer (FromRational t i) = return (TConst t)
+infer (FromIntegral tr e) = do
+  t <- infer e
+  a <- newTVarOfClass CIntegral
+  unify t a
+  return tr
 infer (BoolLit b) = return tBool
 infer (Tup2 e1 e2) = do
   t1 <- infer e1
@@ -266,6 +272,7 @@ typeFromBinOp :: BinOp -> TC Type
 typeFromBinOp Plus  = newTVarOfClass CNum
 typeFromBinOp Minus = newTVarOfClass CNum
 typeFromBinOp Mult  = newTVarOfClass CNum
+typeFromBinOp FDiv  = newTVarOfClass CFractional
 typeFromBinOp Quot  = newTVarOfClass CIntegral
 typeFromBinOp Rem   = newTVarOfClass CIntegral
 typeFromBinOp Min   = newTVarOfClass COrd
@@ -394,6 +401,11 @@ inferT1 e@(FromInteger t i)
 inferT1 e@(FromRational t i)
   | classMatch CFractional (TConst t)  = return (T.FromRational t i, TConst t)
   | otherwise                           = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
+inferT1 (FromIntegral tr e) = do
+  (e',t) <- inferT1 e
+  a <- newTVarOfClass CIntegral
+  unify t a
+  return (T.FromIntegral tr e', tr)
 inferT1 (BoolLit b) = return (T.BoolLit b, tBool)
 inferT1 (Tup2 e1 e2) = do
   (e1',t1) <- inferT1 e1
@@ -545,6 +557,13 @@ inferT2 e@(T.FromInteger t i)
 inferT2 e@(T.FromRational t r)
   | classMatch CFractional (TConst t) = return (TConst t)
   | otherwise                         = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
+inferT2 (T.FromIntegral tr e) = do
+  t <- inferT2 e
+  unless (classMatch CIntegral t) $
+    throwError ("argument of fromIntegral must be of class Integral in expression " ++ (show e) ++ ". actual type: " ++ (show t))
+  unless (classMatch CNum tr) $
+    throwError ("result type of fromIntegral must be of class Num in expression " ++ (show (T.FromIntegral tr e)) ++ ". actual type: " ++ (show tr))
+  return tr
 inferT2 (T.BoolLit b) = return tBool
 inferT2 (T.Tup2 e1 e2) = liftM2 TTup2 (inferT2 e1) (inferT2 e2)
 inferT2 (T.Fst e) = do
@@ -671,6 +690,7 @@ checkBinOp :: BinOp -> Type -> TC2 ()
 checkBinOp Plus  t | classMatch CNum t = return ()
 checkBinOp Minus t | classMatch CNum t = return ()
 checkBinOp Mult  t | classMatch CNum t = return ()
+checkBinOp FDiv  t | classMatch CFractional t = return ()
 checkBinOp Quot  t | classMatch CIntegral t = return ()
 checkBinOp Rem   t | classMatch CIntegral t = return ()
 checkBinOp Min   t | classMatch COrd t = return ()

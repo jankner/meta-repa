@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module HOAS where
 
 
@@ -25,7 +26,17 @@ import Control.Monad.State
 
 import System.IO.Unsafe
 
-import Language.Haskell.TH
+import Language.Haskell.TH hiding (Type)
+
+data Type a where
+  TConst :: TypeConst a -> Type a
+  TTup2 :: Type a -> Type b -> Type (a,b)
+  TTupN :: Tup t => t Type -> Type (t Id)
+  TMArr :: Type a -> Type (IOUArray Int a)
+  TIArr :: Type a -> Type (UArray Int a)
+  TFun :: Type a -> Type b -> Type (a -> b)
+  TIO :: Type a -> Type (IO a)
+  
 
 data TypeConst a where
   TInt :: TypeConst Int
@@ -36,24 +47,48 @@ data TypeConst a where
 deriving instance Show (TypeConst a)
 
 class (MArray IOUArray a IO, IArray UArray a) => Storable a where
-  typeOf :: a -> TypeConst a
-  typeOf0 :: TypeConst a
+  typeConstOf :: a -> TypeConst a
+  typeConstOf0 :: TypeConst a
 
 instance Storable Int where
-  typeOf _ = TInt
-  typeOf0 = TInt
+  typeConstOf _ = TInt
+  typeConstOf0  = TInt
 
 instance Storable Double where
-  typeOf _ = TDouble
-  typeOf0 = TDouble
+  typeConstOf _ = TDouble
+  typeConstOf0  = TDouble
 
 instance Storable Float where
-  typeOf _ = TFloat
-  typeOf0 = TFloat
+  typeConstOf _ = TFloat
+  typeConstOf0  = TFloat
 
 instance Storable Bool where
-  typeOf _ = TBool
-  typeOf0 = TBool
+  typeConstOf _ = TBool
+  typeConstOf0  = TBool
+
+class Typeable a where
+  typeOf :: a -> Type a
+  typeOf0 :: Type a
+
+instance Typeable Int where
+  typeOf _ = TConst TInt
+  typeOf0  = TConst TInt
+
+instance Typeable Float where
+  typeOf _ = TConst TFloat
+  typeOf0  = TConst TFloat
+
+instance Typeable Double where
+  typeOf _ = TConst TDouble
+  typeOf0  = TConst TDouble
+
+instance Typeable Bool where
+  typeOf _ = TConst TBool
+  typeOf0  = TConst TBool
+
+instance (Typeable a, Typeable b) => Typeable (a,b) where
+  typeOf _ = TTup2 (typeOf0 :: Type a) (typeOf0 :: Type b)
+  typeOf0  = TTup2 (typeOf0 :: Type a) (typeOf0 :: Type b)
 
 data Z = Z
 data S n = S n
@@ -132,6 +167,7 @@ data Expr a where
   Recip :: Fractional a => Expr a -> Expr a
   FromInteger :: Num a => TypeConst a -> Integer -> Expr a
   FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
+  FromIntegral :: (Integral a, Num b) => Type b -> Expr a -> Expr b
 
   BoolLit :: Bool -> Expr Bool
 
@@ -191,13 +227,13 @@ instance (Storable a, Num a) => Num (Expr a) where
   (-) = Binop Minus
   abs = Abs
   signum = Signum
-  fromInteger = FromInteger typeOf0
+  fromInteger = FromInteger typeConstOf0
 
 
 instance (Storable a, Fractional a) => Fractional (Expr a) where
   (/) = Binop FDiv
   recip = Recip
-  fromRational = FromRational typeOf0
+  fromRational = FromRational typeConstOf0
 
 getN :: Get n t Expr b => n -> Expr (t Id) -> Expr b
 getN n et = GetN (tupLen (fake et)) n et
