@@ -6,10 +6,16 @@ data BinOp = Plus  -- Num a => P a
            | Mult  -- Num a => P a
            | Quot -- Integral a => P a
            | Rem  -- Integral a => P a
+           | FDiv -- Fractional a => P a
            | Min -- Ord a => P a
            | Max -- Ord a => P a
            | And -- P Bool
            | Or  -- P Bool
+  deriving (Show, Eq, Ord)
+
+data UnOp = Abs    -- Num a
+          | Signum -- Num a
+          | Recip  -- Fractional a
   deriving (Show, Eq, Ord)
 
 data CompOp = EQU  -- Eq a => CompOp a

@@ -62,10 +62,10 @@ min = Binop Min
 (||) = Binop Or
 
 quot :: Integral a => Expr a -> Expr a -> Expr a
-quot = Quot
+quot = Binop Quot
 
 rem :: Integral a => Expr a -> Expr a -> Expr a
-rem = Rem
+rem = Binop Rem
 
 true :: Expr Bool
 true = BoolLit P.True

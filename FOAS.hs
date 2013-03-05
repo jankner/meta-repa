@@ -19,12 +19,12 @@ data Expr =
     Var Int
   -- P a -> a -> a -> a
   | BinOp BinOp Expr Expr
-  -- Num a => a -> a
-  | Abs Expr
-  -- Num a => a -> a
-  | Signum Expr
-  -- Num a => Integer -> Int ?
+  -- P a -> a -> a
+  | UnOp UnOp Expr
+  -- Num a => Integer -> a
   | FromInteger TypeConst Integer
+  -- Fractional a => Rational -> a
+  | FromRational TypeConst Rational
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -98,10 +98,9 @@ exprRec :: ((Expr -> a) -> Expr -> a)
         -> (a -> a -> a -> a -> a)
         -> Expr
         -> a
-exprRec f g2 g3 g4 e@(Abs e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(UnOp op e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Fst e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Snd e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Signum e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Return e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(NewArray e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(RunMutableArray e1) = exprFold f g2 g3 g4 e1
@@ -139,11 +138,10 @@ exprTrav :: Monad m
          -> (a -> a -> a)
          -> Expr
          -> m (Expr,a)
-exprTrav f g e@(Abs e1) = liftM (Abs *** id) (exprTraverse f g e1)
+exprTrav f g e@(UnOp op e1) = liftM ((UnOp op) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
 exprTrav f g e@(Lambda v e1) = liftM ((Lambda v) *** id) (exprTraverse f g e1)
-exprTrav f g e@(Signum e1) = liftM (Signum *** id) (exprTraverse f g e1)
 exprTrav f g e@(Return e1) = liftM (Return *** id) (exprTraverse f g e1)
 exprTrav f g e@(NewArray e1) = liftM (NewArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(RunMutableArray e1) = liftM (RunMutableArray *** id) (exprTraverse f g e1)
@@ -186,10 +184,11 @@ reducel4 :: (a -> a -> a) -> a -> a -> a -> a -> a
 reducel4 f a b c d = ((a `f` b) `f` c) `f` d
 
 isAtomic :: Expr -> Bool
-isAtomic (Var _)           = True
-isAtomic (FromInteger _ _) = True
-isAtomic (BoolLit _)       = True
-isAtomic (Skip)            = True
+isAtomic (Var _)            = True
+isAtomic (FromInteger _ _)  = True
+isAtomic (FromRational _ _) = True
+isAtomic (BoolLit _)        = True
+isAtomic (Skip)             = True
 isAtomic _ = False
 
 findMin :: IS.IntSet -> Maybe Int
@@ -309,11 +308,18 @@ instance Show Expr where
 
 showExpr :: Int -> Expr -> ShowS
 showExpr d (Var v) = showsVar v
+showExpr d (UnOp op a) =
+  case op of
+    Abs    -> showApp d "abs" [a]
+    Signum -> showApp d "signum" [a]
+    Recip  -> showApp d "recip" [a]
 showExpr d (BinOp op a b)  = showBinOp d op a b
 showExpr d (Compare op a b) = showCompOp d op a b
-showExpr d (Abs a) = showApp d "abs" [a]
-showExpr d (Signum a) = showApp d "signum" [a]
-showExpr d (FromInteger t n) = shows n
+showExpr d (FromInteger t i) = shows i
+showExpr d (FromRational t r) =
+  case t of
+    TFloat  -> shows (fromRational r :: Float)
+    TDouble -> shows (fromRational r :: Float)
 showExpr d (BoolLit b) = shows b
 showExpr d (Tup2 a b) = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]

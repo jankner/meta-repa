@@ -123,16 +123,6 @@ infer (Var v) = do
   return t
 infer (FromInteger t i) = return (TConst t)
 infer (BoolLit b) = return tBool
-infer (Abs e) = do
-  t <- infer e
-  a <- newTVarOfClass CNum
-  unify t a
-  return t
-infer (Signum e) = do
-  t <- infer e
-  a <- newTVarOfClass CNum
-  unify t a
-  return t
 infer (Tup2 e1 e2) = do
   t1 <- infer e1
   t2 <- infer e2
@@ -161,6 +151,11 @@ infer (Let v e1 e2) = do
   t1 <- infer e1
   t2 <- addVar v t1 $ infer e2
   return t2
+infer (UnOp op e) = do
+  t <- infer e
+  a <- typeFromUnOp op
+  unify t a
+  return t
 infer (BinOp op e1 e2) = do
   t1 <- infer e1
   a <- typeFromBinOp op
@@ -278,6 +273,11 @@ typeFromBinOp Max   = newTVarOfClass COrd
 typeFromBinOp And   = return tBool
 typeFromBinOp Or    = return tBool
 
+typeFromUnOp :: UnOp -> TC Type
+typeFromUnOp Abs    = newTVarOfClass CNum
+typeFromUnOp Signum = newTVarOfClass CNum
+typeFromUnOp Recip  = newTVarOfClass CNum
+
 typeFromCompOp EQU = newTVarOfClass CEq
 typeFromCompOp NEQ = newTVarOfClass CEq
 typeFromCompOp GTH = newTVarOfClass COrd
@@ -297,7 +297,11 @@ classMatch COrd (TTup2 t1 t2) = (classMatch COrd t1) && (classMatch COrd t2)
 classMatch COrd (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch COrd) ts)
 classMatch COrd (TConst TUnit) = True
 classMatch CNum (TConst TInt) = True
+classMatch CNum (TConst TFloat) = True
+classMatch CNum (TConst TDouble) = True
 classMatch CIntegral (TConst TInt) = True
+classMatch CFractional (TConst TFloat) = True
+classMatch CFractional (TConst TDouble) = True
 classMatch CShow (TConst TInt) = True
 classMatch CShow (TConst TBool) = True
 classMatch CShow (TTup2 t1 t2) = (classMatch CShow t1) && (classMatch CShow t2)
@@ -384,18 +388,13 @@ inferT1 Skip = return (T.Skip, TIO tUnit)
 inferT1 (Var v) = do
   t <- lookupVar v
   return (T.Var v, t)
-inferT1 (FromInteger t i) = return (T.FromInteger t i, TConst t)
+inferT1 e@(FromInteger t i)
+  | classMatch CNum (TConst t) = return (T.FromInteger t i, TConst t)
+  | otherwise                  = throwError ((show t) ++ " is not of class Num in expression: " ++ (show e))
+inferT1 e@(FromRational t i)
+  | classMatch CFractional (TConst t)  = return (T.FromRational t i, TConst t)
+  | otherwise                           = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
 inferT1 (BoolLit b) = return (T.BoolLit b, tBool)
-inferT1 (Abs e) = do
-  (e',t) <- inferT1 e
-  a <- newTVarOfClass CNum
-  unify2 e t a
-  return (T.Abs e', t)
-inferT1 (Signum e) = do
-  (e',t) <- inferT1 e
-  a <- newTVarOfClass CNum
-  unify2 e t a
-  return (T.Signum e', t)
 inferT1 (Tup2 e1 e2) = do
   (e1',t1) <- inferT1 e1
   (e2',t2) <- inferT1 e2
@@ -424,6 +423,11 @@ inferT1 (Let v e1 e2) = do
   (e1',t1) <- inferT1 e1
   (e2',t2) <- addVar v t1 $ inferT1 e2
   return (T.Let v e1' e2', t2)
+inferT1 (UnOp op e) = do
+  (e',t) <- inferT1 e
+  a <- typeFromUnOp op
+  unify2 e t a
+  return (e',t)
 inferT1 (BinOp op e1 e2) = do
   (e1',t1) <- inferT1 e1
   a <- typeFromBinOp op
@@ -535,10 +539,13 @@ runTC2 m = runReader (runErrorT (unTC2 m)) []
 inferT2 :: T.Expr -> TC2 Type
 inferT2 T.Skip = return (TIO tUnit)
 inferT2 (T.Var v) = lookupVar v
-inferT2 (T.FromInteger t i) = return (TConst t)
+inferT2 e@(T.FromInteger t i) 
+  | classMatch CNum (TConst t) = return (TConst t)
+  | otherwise                  = throwError ((show t) ++ " is not of class Num in expression: " ++ (show e))
+inferT2 e@(T.FromRational t r)
+  | classMatch CFractional (TConst t) = return (TConst t)
+  | otherwise                         = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
 inferT2 (T.BoolLit b) = return tBool
-inferT2 (T.Abs e) = inferT2 e
-inferT2 (T.Signum e) = inferT2 e
 inferT2 (T.Tup2 e1 e2) = liftM2 TTup2 (inferT2 e1) (inferT2 e2)
 inferT2 (T.Fst e) = do
   t <- inferT2 e
@@ -562,6 +569,10 @@ inferT2 (T.Let v e1 e2) = do
   t1 <- inferT2 e1
   t2 <- addVar v t1 $ inferT2 e2
   return t2
+inferT2 (T.UnOp op e) = do
+  t <- inferT2 e
+  checkUnOp op t
+  return t
 inferT2 (T.BinOp op e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
@@ -667,6 +678,12 @@ checkBinOp Max   t | classMatch COrd t = return ()
 checkBinOp And   t | t == tBool = return ()
 checkBinOp Or    t | t == tBool = return ()
 checkBinOp op t = throwError ("type " ++ (show t) ++ " not compatible with operator " ++ (show op))
+
+checkUnOp :: UnOp -> Type -> TC2 ()
+checkUnOp Abs    t | classMatch CNum t = return ()
+checkUnOp Signum t | classMatch CNum t = return ()
+checkUnOp Recip  t | classMatch CFractional t = return ()
+checkUnOp op     t = throwError ("type " ++ (show t) ++ " not compatible with operator " ++ (show op))
 
 checkCompOp :: CompOp -> Type -> TC2 ()
 checkCompOp EQU t | classMatch CEq t = return ()

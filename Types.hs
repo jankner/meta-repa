@@ -6,7 +6,12 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 
 
-data Class = CEq | COrd | CNum | CIntegral | CShow
+data Class = CEq 
+           | COrd
+           | CNum
+           | CIntegral
+           | CFractional
+           | CShow
   deriving (Eq,Ord,Show)
 
 type TRef = IORef (Maybe Type)

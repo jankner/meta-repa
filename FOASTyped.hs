@@ -38,12 +38,12 @@ data Expr =
     Var Int
   -- P a -> a -> a -> a
   | BinOp BinOp Expr Expr
-  -- Num a => a -> a
-  | Abs Expr
-  -- Num a => a -> a
-  | Signum Expr
+  -- P a -> a -> a
+  | UnOp UnOp Expr
   -- Num a => Integer -> Int ?
   | FromInteger TypeConst Integer
+  -- Fractional a => Rational -> a
+  | FromRational TypeConst Rational
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -124,11 +124,10 @@ exprTrav :: Monad m
          -> (a -> a -> a)
          -> Expr
          -> m (Expr,a)
-exprTrav f g e@(Abs e1) = liftM (Abs *** id) (exprTraverse f g e1)
+exprTrav f g e@(UnOp op e1) = liftM ((UnOp op) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
 exprTrav f g e@(Lambda v t e1) = liftM ((Lambda v t) *** id) (exprTraverse f g e1)
-exprTrav f g e@(Signum e1) = liftM (Signum *** id) (exprTraverse f g e1)
 exprTrav f g e@(Return e1) = liftM (Return *** id) (exprTraverse f g e1)
 exprTrav f g e@(NewArray e1) = liftM (NewArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(RunMutableArray e1) = liftM (RunMutableArray *** id) (exprTraverse f g e1)
@@ -171,10 +170,11 @@ reducel4 :: (a -> a -> a) -> a -> a -> a -> a -> a
 reducel4 f a b c d = ((a `f` b) `f` c) `f` d
 
 isAtomic :: Expr -> Bool
-isAtomic (Var _)         = True
-isAtomic (FromInteger _ _) = True
-isAtomic (BoolLit _)     = True
-isAtomic (Skip)          = True
+isAtomic (Var _)            = True
+isAtomic (FromInteger _ _)  = True
+isAtomic (FromRational _ _) = True
+isAtomic (BoolLit _)        = True
+isAtomic (Skip)             = True
 isAtomic _ = False
 
 -- CSE
@@ -295,10 +295,13 @@ instance Show Expr where
 
 showExpr :: Int -> Expr -> ShowS
 showExpr d (Var v) = showsVar v
+showExpr d (UnOp op a) =
+  case op of
+    Abs    -> showApp d "abs" [a]
+    Signum -> showApp d "signum" [a]
+    Recip  -> showApp d "recip" [a]
 showExpr d (BinOp op a b)  = showBinOp d op a b
 showExpr d (Compare op a b) = showCompOp d op a b
-showExpr d (Abs a)         = showApp d "abs" [a]
-showExpr d (Signum a)      = showApp d "signum" [a]
 showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
 showExpr d (BoolLit b)     = shows b
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
@@ -353,9 +356,8 @@ showCompOp d LEQ a b = showParen (d > 4) $ showsPrec 4 a . showString " <= " . s
 
 translate :: Expr -> Q Exp
 translate (Var v) = dyn (showVar v)
+translate (UnOp op e) = translateUnOp op (translate e)
 translate (BinOp op e1 e2) = translateBinOp op (translate e1) (translate e2)
-translate (Abs e) = [| abs $(translate e) |]
-translate (Signum e) = [| signum $(translate e) |]
 translate (FromInteger t i) = translateFromInteger t i
 translate (BoolLit b) = [| b |]
 translate (Compare op e1 e2) = translateCompOp op (translate e1) (translate e2)
@@ -392,6 +394,11 @@ translateFromInteger :: TypeConst -> Integer -> Q Exp
 translateFromInteger TInt i = sigE [| i |] [t| Int |]
 translateFromInteger TFloat i = sigE [| i |] [t| Float |]
 translateFromInteger TDouble i = sigE [| i |] [t| Double |]
+
+translateUnOp :: UnOp -> Q Exp -> Q Exp
+translateUnOp Abs    q = [| abs $(q) |]
+translateUnOp Signum q = [| signum $(q) |]
+translateUnOp Recip  q = [| recip $(q) |]
       
 translateBinOp :: BinOp -> Q Exp -> Q Exp -> Q Exp
 translateBinOp Minus q1 q2 = [| $(q1) - $(q2) |]

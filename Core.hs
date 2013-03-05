@@ -25,16 +25,18 @@ toFOAS (HO.Binop op a b) =
     HO.Plus  -> FO.BinOp FO.Plus  (toFOAS a) (toFOAS b)
     HO.Minus -> FO.BinOp FO.Minus (toFOAS a) (toFOAS b)
     HO.Mult  -> FO.BinOp FO.Mult  (toFOAS a) (toFOAS b)
+    HO.Quot  -> FO.BinOp FO.Quot  (toFOAS a) (toFOAS b)
+    HO.Rem   -> FO.BinOp FO.Rem   (toFOAS a) (toFOAS b)
+    HO.FDiv  -> FO.BinOp FO.FDiv  (toFOAS a) (toFOAS b)
     HO.And   -> FO.BinOp FO.And  (toFOAS a) (toFOAS b)
     HO.Or    -> FO.BinOp FO.Or   (toFOAS a) (toFOAS b)
     HO.Min   -> FO.BinOp FO.Min  (toFOAS a) (toFOAS b)
     HO.Max   -> FO.BinOp FO.Max  (toFOAS a) (toFOAS b)
-toFOAS (HO.Abs a) = FO.Abs (toFOAS a)
-toFOAS (HO.Signum a) = FO.Signum (toFOAS a)
-toFOAS (HO.FromInteger t n) = FO.FromInteger (translateTConst t) n
-
-toFOAS (HO.Quot a b) = FO.BinOp FO.Quot (toFOAS a) (toFOAS b)
-toFOAS (HO.Rem  a b) = FO.BinOp FO.Rem  (toFOAS a) (toFOAS b)
+toFOAS (HO.Abs a)    = FO.UnOp FO.Abs    (toFOAS a)
+toFOAS (HO.Signum a) = FO.UnOp FO.Signum (toFOAS a)
+toFOAS (HO.Recip a)  = FO.UnOp FO.Recip  (toFOAS a)
+toFOAS (HO.FromInteger  t i) = FO.FromInteger (translateTConst t) i
+toFOAS (HO.FromRational t r) = FO.FromRational (translateTConst t) r
 
 toFOAS (HO.Equal    a b) = FO.Compare FO.EQU (toFOAS a) (toFOAS b)
 toFOAS (HO.NotEqual a b) = FO.Compare FO.NEQ (toFOAS a) (toFOAS b)

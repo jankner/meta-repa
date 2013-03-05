@@ -129,11 +129,9 @@ data Expr a where
   Binop :: Binop a -> Expr a -> Expr a -> Expr a
   Abs :: Num a => Expr a -> Expr a
   Signum :: Num a => Expr a -> Expr a
+  Recip :: Fractional a => Expr a -> Expr a
   FromInteger :: Num a => TypeConst a -> Integer -> Expr a
   FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
-
-  Quot :: Integral a => Expr a -> Expr a -> Expr a
-  Rem :: Integral a => Expr a -> Expr a -> Expr a
 
   BoolLit :: Bool -> Expr Bool
 
@@ -179,6 +177,9 @@ data Binop a where
   Minus :: Num a => Binop a
   Min   :: Ord a => Binop a
   Max   :: Ord a => Binop a
+  Quot  :: Integral a => Binop a
+  Rem   :: Integral a => Binop a
+  FDiv  :: Fractional a => Binop a
   And   :: Binop Bool
   Or    :: Binop Bool
 
@@ -193,9 +194,9 @@ instance (Storable a, Num a) => Num (Expr a) where
   fromInteger = FromInteger typeOf0
 
 
-instance Fractional (Expr Double) where
-  (/) = undefined
-  recip = undefined
+instance (Storable a, Fractional a) => Fractional (Expr a) where
+  (/) = Binop FDiv
+  recip = Recip
   fromRational = FromRational typeOf0
 
 getN :: Get n t Expr b => n -> Expr (t Id) -> Expr b
