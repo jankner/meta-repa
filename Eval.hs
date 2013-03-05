@@ -18,13 +18,18 @@ import GHC.Exts
 import Prelude		as P
 
 
-while cond step s | cond s    = while cond step (step s)
-                  | otherwise = s
+while cond step init = loop init
+  where loop !s | cond s = loop (step s)
+                | True   = s
+{-# INLINE [0] while #-}
 
 whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
-whileM cond step action s | cond s    = action s >> whileM cond step action (step s)
-                          | otherwise = P.return ()
-
+whileM cond step action init
+  = let loop s = if cond s 
+                 then action s >> loop (step s)
+                 else P.return ()
+    in loop init
+{-# INLINE [0] whileM #-}
 
 parM :: Int -> (Int -> IO ()) -> IO ()
 parM (I# n) action = gangIO theGang $
@@ -46,6 +51,7 @@ parM (I# n) action = gangIO theGang $
                      | otherwise  =
           do action (I# ix)
              run (ix +# 1#) end
+{-# INLINE [0] parM #-}
 
 runMutableArray :: (MArray IOUArray a IO, IArray UArray a) => IO (IOUArray Int a) -> UArray Int a
 runMutableArray arr = unsafePerformIO (arr >>= unsafeFreeze)

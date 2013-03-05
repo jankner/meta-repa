@@ -6,6 +6,7 @@ import FOASCommon
 import Types
 import Eval
 
+import Data.Array.Base
 import Data.Array.IO hiding (unsafeFreeze)
 import Data.Array.MArray hiding (unsafeFreeze)
 import Data.Array.IArray
@@ -380,7 +381,8 @@ translate (RunMutableArray e) = [| runMutableArray $(translate e) |]
 translate (ReadIArray e1 e2) = [| $(translate e1) ! $(translate e2) |]
 translate (ArrayLength e) = [| snd (bounds $(translate e)) + 1 |]
 translate (NewArray e) = [| newIOUArray (0,$(translate e)-1) |]
-translate (WriteArray e1 e2 e3) = [| writeArray $(translate e1) $(translate e2) $(translate e3) |]
+translate (WriteArray e1 e2 e3) = [| unsafeWrite $(translate e1) $(translate e2) $(translate e3) |]
+translate (ReadArray e1 e2) = [| unsafeRead $(translate e1) $(translate e2) |]
 translate (ParM e1 e2) = [| parM $(translate e1) $(translate e2) |]
 translate Skip = [| return () |]
 translate (Print e) = [| print $(translate e) |]
