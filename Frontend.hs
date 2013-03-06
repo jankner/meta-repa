@@ -15,12 +15,14 @@ import Data.Array.IArray hiding (inRange,index)
 import Data.Array.Unboxed hiding (inRange,index)
 
 import qualified Prelude as P
-import Prelude (Num(..),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
+import Prelude (Num(..),Fractional(..),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
 import Control.Monad
 
 import Core
 import HOAS hiding (Z)
 
+infixr 8 ^^
+infixr 8 ^
 infix  4 ==
 infix  4 /=
 infix  4 >=
@@ -82,6 +84,25 @@ false = BoolLit P.False
 fromIntegral :: (Integral a, Num b, Typeable b) => Expr a -> Expr b
 fromIntegral = FromIntegral typeOf0
 
+even :: (Storable a, Integral a) => Expr a -> Expr Bool
+even a = a `rem` 2 == 0
+
+odd a = a `rem` 2 == 1
+
+(^) :: (Num a, Computable a, Integral b, Storable b) => a -> Expr b -> a
+x0 ^ y0 =
+  if_ (y0 == 0)
+    1
+    (P.fst (iterateWhile (\(x,y) -> y == 0) 
+      (\(x,y) -> if_ (even y)
+        (x*x, y `quot` 2)
+        (x*x0, y-1))
+      (x0,y0)))
+
+(^^) :: (Fractional a, Computable a, Integral b, Storable b) => a -> Expr b -> a
+x ^^ y = if_ (y <= 0)
+          (x ^ y)
+          (recip (x^(negate y)))
 
 type Index  = P.Int
 type Length = P.Int
