@@ -67,6 +67,12 @@ quot = Binop Quot
 rem :: Integral a => Expr a -> Expr a -> Expr a
 rem = Binop Rem
 
+div :: Integral a => Expr a -> Expr a -> Expr a
+div = Binop Div
+
+mod :: Integral a => Expr a -> Expr a -> Expr a
+mod = Binop Mod
+
 true :: Expr Bool
 true = BoolLit P.True
 

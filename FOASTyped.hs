@@ -341,25 +341,6 @@ showsVar v | v < 0x40000000 = showString "x" . shows v
 
 showVar v = showsVar v ""
 
-showBinOp :: Int -> BinOp -> Expr -> Expr -> ShowS
-showBinOp d Minus a b = showParen (d > 6) $ showsPrec 6 a . showString " - " . showsPrec 7 b
-showBinOp d Plus  a b = showParen (d > 6) $ showsPrec 6 a . showString " + " . showsPrec 7 b
-showBinOp d Mult  a b = showParen (d > 7) $ showsPrec 7 a . showString " * " . showsPrec 8 b
-showBinOp d Quot  a b = showParen (d > 7) $ showsPrec 7 a . showString " `quot` " . showsPrec 8 b
-showBinOp d Rem   a b = showParen (d > 7) $ showsPrec 7 a . showString " `rem` " . showsPrec 8 b
-showBinOp d Min   a b = showParen (d > 10) $ showString "min " . showsPrec 10 a . showsPrec 10 b
-showBinOp d Max   a b = showParen (d > 10) $ showString "max " . showsPrec 10 a . showsPrec 10 b
-showBinOp d And   a b = showParen (d > 3) $ showsPrec 3 a . showString " && " . showsPrec 4 b
-showBinOp d Or    a b = showParen (d > 2) $ showsPrec 2 a . showString " || " . showsPrec 3 b
-
-showCompOp :: Int -> CompOp -> Expr -> Expr -> ShowS
-showCompOp d EQU  a b = showParen (d > 4) $ showsPrec 4 a . showString " == " . showsPrec 4 b
-showCompOp d NEQ a b = showParen (d > 4) $ showsPrec 4 a . showString " /= " . showsPrec 4 b
-showCompOp d GTH a b = showParen (d > 4) $ showsPrec 4 a . showString " > " . showsPrec 4 b
-showCompOp d LTH a b = showParen (d > 4) $ showsPrec 4 a . showString " < " . showsPrec 4 b
-showCompOp d GEQ a b = showParen (d > 4) $ showsPrec 4 a . showString " >= " . showsPrec 4 b
-showCompOp d LEQ a b = showParen (d > 4) $ showsPrec 4 a . showString " <= " . showsPrec 4 b
-
 
 -- Translation
 
@@ -417,6 +398,8 @@ translateBinOp Plus  q1 q2 = [| $(q1) + $(q2) |]
 translateBinOp Mult  q1 q2 = [| $(q1) * $(q2) |]
 translateBinOp Quot  q1 q2 = [| $(q1) `quot` $(q2) |]
 translateBinOp Rem   q1 q2 = [| $(q1) `rem` $(q2) |]
+translateBinOp Div   q1 q2 = [| $(q1) `div` $(q2) |]
+translateBinOp Mod   q1 q2 = [| $(q1) `mod` $(q2) |]
 translateBinOp FDiv  q1 q2 = [| $(q1) / $(q2) |]
 translateBinOp Min   q1 q2 = [| min $(q1) $(q2) |]
 translateBinOp Max   q1 q2 = [| max $(q1) $(q2) |]

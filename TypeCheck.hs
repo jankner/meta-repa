@@ -275,6 +275,8 @@ typeFromBinOp Mult  = newTVarOfClass CNum
 typeFromBinOp FDiv  = newTVarOfClass CFractional
 typeFromBinOp Quot  = newTVarOfClass CIntegral
 typeFromBinOp Rem   = newTVarOfClass CIntegral
+typeFromBinOp Div   = newTVarOfClass CIntegral
+typeFromBinOp Mod   = newTVarOfClass CIntegral
 typeFromBinOp Min   = newTVarOfClass COrd
 typeFromBinOp Max   = newTVarOfClass COrd
 typeFromBinOp And   = return tBool
@@ -693,6 +695,8 @@ checkBinOp Mult  t | classMatch CNum t = return ()
 checkBinOp FDiv  t | classMatch CFractional t = return ()
 checkBinOp Quot  t | classMatch CIntegral t = return ()
 checkBinOp Rem   t | classMatch CIntegral t = return ()
+checkBinOp Div   t | classMatch CIntegral t = return ()
+checkBinOp Mod   t | classMatch CIntegral t = return ()
 checkBinOp Min   t | classMatch COrd t = return ()
 checkBinOp Max   t | classMatch COrd t = return ()
 checkBinOp And   t | t == tBool = return ()

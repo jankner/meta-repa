@@ -33,6 +33,8 @@ toFOAS (HO.Binop op a b) =
     HO.Mult  -> FO.BinOp FO.Mult  (toFOAS a) (toFOAS b)
     HO.Quot  -> FO.BinOp FO.Quot  (toFOAS a) (toFOAS b)
     HO.Rem   -> FO.BinOp FO.Rem   (toFOAS a) (toFOAS b)
+    HO.Div   -> FO.BinOp FO.Div  (toFOAS a) (toFOAS b)
+    HO.Mod   -> FO.BinOp FO.Mod   (toFOAS a) (toFOAS b)
     HO.FDiv  -> FO.BinOp FO.FDiv  (toFOAS a) (toFOAS b)
     HO.And   -> FO.BinOp FO.And  (toFOAS a) (toFOAS b)
     HO.Or    -> FO.BinOp FO.Or   (toFOAS a) (toFOAS b)

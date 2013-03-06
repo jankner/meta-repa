@@ -215,6 +215,8 @@ data Binop a where
   Max   :: Ord a => Binop a
   Quot  :: Integral a => Binop a
   Rem   :: Integral a => Binop a
+  Div   :: Integral a => Binop a
+  Mod   :: Integral a => Binop a
   FDiv  :: Fractional a => Binop a
   And   :: Binop Bool
   Or    :: Binop Bool
