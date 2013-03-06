@@ -91,7 +91,7 @@ data Expr =
   | ArrayLength Expr
   
   -- MArray IOUArray a IO => Int -> (IO (IOUArray Int a))
-  | NewArray Expr
+  | NewArray Type Expr
   -- MArray IOUArray a IO => (IOUArray Int a) -> Int -> (IO a)
   | ReadArray Expr Expr
   -- MArray IOUArray a IO => (IOUArray Int a) -> Int -> a -> (IO ())
@@ -133,7 +133,7 @@ exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
 exprTrav f g e@(Lambda v t e1) = liftM ((Lambda v t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Return e1) = liftM (Return *** id) (exprTraverse f g e1)
-exprTrav f g e@(NewArray e1) = liftM (NewArray *** id) (exprTraverse f g e1)
+exprTrav f g e@(NewArray t e1) = liftM ((NewArray t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(RunMutableArray e1) = liftM (RunMutableArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(ArrayLength e1) = liftM (ArrayLength *** id) (exprTraverse f g e1)
 exprTrav f g e@(Print e1) = liftM (Print *** id) (exprTraverse f g e1)
@@ -323,7 +323,7 @@ showExpr d (WhileM cond step action init) = showApp d "whileM" [cond,step,action
 showExpr d (RunMutableArray arr) = showApp d "runMutableArray" [arr]
 showExpr d (ReadIArray arr ix)   = showApp d "readIArray" [arr,ix]
 showExpr d (ArrayLength arr)     = showApp d "arrayLength" [arr]
-showExpr d (NewArray l)          = showApp d "newArray" [l]
+showExpr d (NewArray t l)        = showApp d "newArray" [l]
 showExpr d (ReadArray arr ix)    = showApp d "readArray" [arr,ix]
 showExpr d (WriteArray arr ix a) = showApp d "writeArray" [arr,ix,a]
 showExpr d (ParM n f) = showApp d "parM" [n,f]
@@ -374,7 +374,7 @@ translate (WhileM cond step action init) =
 translate (RunMutableArray e) = [| runMutableArray $(translate e) |]
 translate (ReadIArray e1 e2) = [| $(translate e1) ! $(translate e2) |]
 translate (ArrayLength e) = [| snd (bounds $(translate e)) + 1 |]
-translate (NewArray e) = [| newIOUArray (0,$(translate e)-1) |]
+translate (NewArray t e) = sigE [| newIOUArray (0,$(translate e)-1) |] (translateType (TIO $ TMArr t))
 translate (WriteArray e1 e2 e3) = [| unsafeWrite $(translate e1) $(translate e2) $(translate e3) |]
 translate (ReadArray e1 e2) = [| unsafeRead $(translate e1) $(translate e2) |]
 translate (ParM e1 e2) = [| parM $(translate e1) $(translate e2) |]

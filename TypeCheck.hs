@@ -382,6 +382,14 @@ zonkExpr' k (T.Lambda v t e) = do
   t' <- zonkType t
   e' <- k e
   return (T.Lambda v t' e')
+zonkExpr' k (T.FromIntegral t e) = do
+  t' <- zonkType t
+  e' <- k e
+  return (T.FromIntegral t' e')
+zonkExpr' k (T.NewArray t e) = do
+  t' <- zonkType t
+  e' <- k e
+  return (T.NewArray t' e')
 zonkExpr' k e | T.isAtomic e = return e
               | otherwise    = k e
 
@@ -518,7 +526,7 @@ inferT1 (NewArray e) = do
   (e', t) <- inferT1 e
   a <- newTypeVarT
   unify2 e t tInt
-  return (T.NewArray e', TIO (TMArr a))
+  return (T.NewArray a e', TIO (TMArr a))
 inferT1 (ReadArray e1 e2) = do
   (e1', t1) <- inferT1 e1
   a <- newTypeVarT
@@ -605,7 +613,7 @@ inferT2 (T.Compare op e1 e2) = do
   t2 <- inferT2 e2
   when (t1 /= t2) $ throwError ("compop with operands of different type: " ++ (show t1) ++ " " ++ (show op) ++ " " ++ (show t2))
   checkCompOp op t1
-  return t1
+  return tBool
 inferT2 (T.Lambda v t e) = liftM (t -->) (addVar v t $ inferT2 e)
 inferT2 (T.Return e) = do
   t <- inferT2 e
@@ -615,7 +623,7 @@ inferT2 e@(T.Bind e1 e2) = do
   t2 <- inferT2 e2
   case (t1,t2) of
     (TIO a, TFun a' (TIO b)) ->
-      do matchType a a'
+      do matchType2 e a a'
          return (TIO b)
     _ -> throwError ((show e) ++ " ohno " ++ (show e1) ++ " :: " ++ (show t1) ++ " \n " ++ (show e2) ++ " :: "  ++ (show t2))
 inferT2 (T.ParM e1 e2) = do
@@ -628,17 +636,17 @@ inferT2 (T.IterateWhile e1 e2 e3) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   t3 <- inferT2 e3
-  matchType t1 (t3 --> tBool)
-  matchType t2 (t3 --> t3)
+  matchType2 e1 t1 (t3 --> tBool)
+  matchType2 e2 t2 (t3 --> t3)
   return t3
 inferT2 (T.WhileM e1 e2 e3 e4) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   t3 <- inferT2 e3
   t4 <- inferT2 e4
-  matchType t1 (t4 --> tBool)
-  matchType t2 (t4 --> t4)
-  matchType t3 (t4 --> TIO tUnit)
+  matchType2 e1 t1 (t4 --> tBool)
+  matchType2 e2 t2 (t4 --> t4)
+  matchType2 e3 t3 (t4 --> TIO tUnit)
   return (TIO tUnit)
 inferT2 (T.RunMutableArray e) = do
   t <- inferT2 e
@@ -648,7 +656,7 @@ inferT2 (T.RunMutableArray e) = do
 inferT2 (T.ReadIArray e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
-  matchType t2 tInt
+  matchType2 e2 t2 tInt
   case t1 of
     TIArr a -> return a
     _ -> throwError ("first argument of readIArray is not of type [a]. actual type: " ++ (show t1))
@@ -657,14 +665,14 @@ inferT2 (T.ArrayLength e) = do
   case t of
     TIArr a -> return a
     _ -> throwError ("first argument of readIArray is not of type [a]. actual type: " ++ (show t))
-inferT2 (T.NewArray e) = do
+inferT2 (T.NewArray tr e) = do
   t <- inferT2 e
-  matchType t tInt
-  return (TIO (TMArr t))
+  matchType2 e t tInt
+  return (TIO (TMArr tr))
 inferT2 e@(T.ReadArray e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
-  matchType t2 tInt
+  matchType2 e2 t2 tInt
   case t1 of
     TMArr a -> return (TIO a)
     _ -> throwError ("first argument of readArray is not of type {a}. actual type: " ++ (show t1))
@@ -672,10 +680,10 @@ inferT2 (T.WriteArray e1 e2 e3) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   t3 <- inferT2 e3
-  matchType t2 tInt
+  matchType2 e2 t2 tInt
   case t1 of
     TMArr a ->
-      do matchType a t3
+      do matchType2 e3 t3 a
          return (TIO tUnit)
     _ -> throwError ("first argument of writeArray is not of type {a}. actual type: " ++ (show t1))
 inferT2 (T.Print e) = do
@@ -687,6 +695,9 @@ matchType :: Type -> Type -> TC2 Type
 matchType t1 t2 | t1 == t2 = return t1
                 | t1 /= t2 = throwError ("could not match " ++ (show t1) ++ " with " ++ (show t2))
 
+matchType2 :: T.Expr -> Type -> Type -> TC2 Type
+matchType2 e t1 t2 | t1 == t2 = return t1
+                   | t1 /= t2 = throwError ("could not match " ++ (show t1) ++ " with " ++ (show t2) ++ " in experession: " ++ (show e))
 
 checkBinOp :: BinOp -> Type -> TC2 ()
 checkBinOp Plus  t | classMatch CNum t = return ()
