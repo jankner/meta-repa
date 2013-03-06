@@ -191,6 +191,8 @@ data Expr a where
   Return :: Expr a -> Expr (IO a)
   Bind   :: Expr (IO a) -> (Expr a -> Expr (IO b)) -> Expr (IO b)
 
+  If :: Expr Bool -> Expr a -> Expr a -> Expr a
+
   IterateWhile :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> Expr s -> Expr s
   WhileM :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> (Expr s -> Expr (IO ())) -> Expr s -> Expr (IO ())
 
@@ -224,9 +226,16 @@ data Binop a where
 deriving instance Eq (Binop a)
 
 instance (Storable a, Num a) => Num (Expr a) where
-  (+) = Binop Plus
-  (*) = Binop Mult
-  (-) = Binop Minus
+  (FromInteger t 0) + e                 = e
+  e                 + (FromInteger t 0) = e
+  e1 + e2 = Binop Plus e1 e2
+  (FromInteger t 1) * e                 = e
+  e                 * (FromInteger t 1) = e
+  (FromInteger t 0) * e2                = 0
+  e1                * (FromInteger t 0) = 0
+  e1 * e2 = Binop Mult e1 e2
+  e                 - (FromInteger t 0) = e
+  e1 - e2 = Binop Minus e1 e2
   abs = Abs
   signum = Signum
   fromInteger = FromInteger typeConstOf0
@@ -273,10 +282,14 @@ readIArray arr i = ReadIArray arr i
 arrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
 arrayLength arr = ArrayLength arr
 
-
-
 printE :: (Computable a, Show (Internal a)) => a -> M ()
 printE a = M (\k -> Print (internalize a) `Bind` (\_ -> k ()))
+
+if_ :: Computable a => Expr Bool -> a -> a -> a
+if_ e a b = externalize $ If e (internalize a) (internalize b)
+
+iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
+iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
 
 whileE :: Computable st => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st -> M () -- a :: Expr (Internal st), action :: st -> M (), internalize :: st -> Expr (Internal st)
 whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (\a -> unM ((action . externalize) a) (\() -> Skip)) (internalize init)
@@ -484,11 +497,6 @@ instance (Computable a0, Computable a1, Computable a2,
      externalize (getN nat4 t), externalize (getN nat5 t),
      externalize (getN nat6 t), externalize (getN nat7 t),
      externalize (getN nat8 t))
-
-
-iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
-iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
-
 
 lowerFun :: (Computable a, Computable b) => (a -> b) -> Expr (Internal a) -> Expr (Internal b)
 lowerFun f = internalize . f . externalize

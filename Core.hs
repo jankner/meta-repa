@@ -68,6 +68,8 @@ toFOAS (HO.Let a f) = FO.Let v (toFOAS a) e
 toFOAS (HO.Return a) = FO.Return (toFOAS a)
 toFOAS (HO.Bind a f) = FO.Bind (toFOAS a) (toFOASFun f)
 
+toFOAS (HO.If cond th el) = FO.If (toFOAS cond) (toFOAS th) (toFOAS el)
+
 toFOAS (HO.IterateWhile cond step init) =
   FO.IterateWhile
     (toFOASFun cond)

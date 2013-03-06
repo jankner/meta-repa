@@ -197,6 +197,13 @@ infer (ParM e1 e2) = do
   t2 <- infer e2
   unify t2 (tInt --> (TIO tUnit))
   return (TIO tUnit)
+infer (If e1 e2 e3) = do
+  t1 <- infer e1
+  unify t1 tBool
+  t2 <- infer e2
+  t3 <- infer e3
+  unify t2 t3
+  return t2
 infer (IterateWhile e1 e2 e3) = do
   s <- newTypeVarT
   t1 <- infer e1
@@ -485,6 +492,13 @@ inferT1 (ParM e1 e2) = do
   (e2', t2) <- inferT1 e2
   unify2 e2 t2 (tInt --> (TIO tUnit))
   return (T.ParM e1' e2', TIO tUnit)
+inferT1 (If e1 e2 e3) = do
+  (e1',t1) <- inferT1 e1
+  unify t1 tBool
+  (e2',t2) <- inferT1 e2
+  (e3',t3) <- inferT1 e3
+  unify t2 t3
+  return (T.If e1' e2' e3', t2)
 inferT1 (IterateWhile e1 e2 e3) = do
   s <- newTypeVarT
   (e1', t1) <- inferT1 e1
@@ -632,6 +646,13 @@ inferT2 (T.ParM e1 e2) = do
   t2 <- inferT2 e2
   when (t2 /= (tInt --> TIO tUnit)) $ throwError ("second argument of parM must be of type IO -> IO (). actual type: " ++ (show t2) ++ " in expression: " ++ (show e2))
   return (TIO tUnit)
+inferT2 (T.If e1 e2 e3) = do
+  t1 <- inferT2 e1
+  t2 <- inferT2 e2
+  t3 <- inferT2 e3
+  matchType2 e1 t1 tBool
+  when (t2 /= t3) $ throwError ("types of branches in conditionals do not match: " ++ (show e1) ++ " :: " ++ (show t1) ++ " \n " ++ (show e2) ++ " :: "  ++ (show t2))
+  return t2
 inferT2 (T.IterateWhile e1 e2 e3) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2

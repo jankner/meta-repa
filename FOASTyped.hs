@@ -77,6 +77,9 @@ data Expr =
   | Return Expr
   -- IO a -> (a -> IO b) -> IO b
   | Bind Expr Expr
+
+  -- Bool -> a -> a -> a
+  | If Expr Expr Expr
   
   -- (s -> Bool) -> (s -> s) -> s -> s
   | IterateWhile Expr Expr Expr
@@ -148,6 +151,7 @@ exprTrav f g e@(ReadIArray e1 e2) = liftM2 (ReadIArray **** g) (exprTraverse f g
 exprTrav f g e@(ReadArray e1 e2) = liftM2 (ReadArray **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(ParM e1 e2) = liftM2 (ParM **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 
+exprTrav f g e@(If e1 e2 e3) = liftM3 (If ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
 exprTrav f g e@(IterateWhile e1 e2 e3) = liftM3 (IterateWhile ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
 exprTrav f g e@(WriteArray e1 e2 e3) = liftM3 (WriteArray ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
 
@@ -318,6 +322,7 @@ showExpr d (Fst a) = showApp d "fst" [a]
 showExpr d (Snd a) = showApp d "fst" [a]
 showExpr d (Return a) = showApp d "return" [a]
 showExpr d (Bind m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
+showExpr d (If cond a b) = showParen (d > 0) $ showString "if " . showsPrec 0 cond . showString " then " . showsPrec 0 a . showString " else " . showsPrec 0 b
 showExpr d (IterateWhile cond step init) = showApp d "iterateWhile" [cond,step,init]
 showExpr d (WhileM cond step action init) = showApp d "whileM" [cond,step,action,init]
 showExpr d (RunMutableArray arr) = showApp d "runMutableArray" [arr]
@@ -367,10 +372,11 @@ translate (Lambda v _ e1) = lam1E (varP v') (translate e1)
   where v' = mkName (showVar v)
 translate (Return e) = [| return $(translate e) |]
 translate (Bind e1 e2) = [| $(translate e1) >>= $(translate e2) |]
-translate (IterateWhile cond step init) =
-  [| while $(translate cond) $(translate step) $(translate init) |]
-translate (WhileM cond step action init) =
-  [| whileM $(translate cond) $(translate step) $(translate action) $(translate init) |]
+translate (If e1 e2 e3) = [| if $(translate e1) then $(translate e2) else $(translate e3) |]
+translate (IterateWhile e1 e2 e3) =
+  [| while $(translate e1) $(translate e2) $(translate e3) |]
+translate (WhileM e1 e2 e3 e4) =
+  [| whileM $(translate e1) $(translate e2) $(translate e3) $(translate e4) |]
 translate (RunMutableArray e) = [| runMutableArray $(translate e) |]
 translate (ReadIArray e1 e2) = [| $(translate e1) ! $(translate e2) |]
 translate (ArrayLength e) = [| snd (bounds $(translate e)) + 1 |]
