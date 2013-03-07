@@ -397,6 +397,9 @@ translate (Print e) = [| print $(translate e) |]
 
 translateFromInteger :: TypeConst -> Integer -> Q Exp
 translateFromInteger TInt i = sigE [| i |] [t| Int |]
+translateFromInteger TInt64 i = sigE [| i |] [t| Int64 |]
+translateFromInteger TWord i = sigE [| i |] [t| Word |]
+translateFromInteger TWord64 i = sigE [| i |] [t| Word64 |]
 translateFromInteger TFloat i = sigE [| i |] [t| Float |]
 translateFromInteger TDouble i = sigE [| i |] [t| Double |]
 
