@@ -64,25 +64,30 @@ toFOAS (HO.Snd a) = FO.Snd (toFOAS a)
 toFOAS (HO.TupN t) = FO.TupN (HO.tupMap toFOAS t)
 toFOAS (HO.GetN l n a) = FO.GetN l (HO.natToInt n) (toFOAS a)
 
+toFOAS (HO.App f a) = FO.App (toFOAS f) (toFOAS a)
+toFOAS (HO.Lambda f) = FO.Lambda v e
+  where e = toFOAS $ f (HO.Var v)
+        v = getVar e
+
 toFOAS (HO.Let a f) = FO.Let v (toFOAS a) e
   where e = toFOAS $ f (HO.Var v)
         v = getVar e
 
 toFOAS (HO.Return a) = FO.Return (toFOAS a)
-toFOAS (HO.Bind a f) = FO.Bind (toFOAS a) (toFOASFun f)
+toFOAS (HO.Bind a f) = FO.Bind (toFOAS a) (toFOAS f)
 
 toFOAS (HO.If cond th el) = FO.If (toFOAS cond) (toFOAS th) (toFOAS el)
 
 toFOAS (HO.IterateWhile cond step init) =
   FO.IterateWhile
-    (toFOASFun cond)
-    (toFOASFun step)
+    (toFOAS cond)
+    (toFOAS step)
     (toFOAS init)
 toFOAS (HO.WhileM cond step action init) =
   FO.WhileM
-    (toFOASFun cond)
-    (toFOASFun step)
-    (toFOASFun action)
+    (toFOAS cond)
+    (toFOAS step)
+    (toFOAS action)
     (toFOAS init)
 
 toFOAS (HO.RunMutableArray a) = FO.RunMutableArray (toFOAS a)
@@ -93,14 +98,10 @@ toFOAS (HO.NewArray a) = FO.NewArray (toFOAS a)
 toFOAS (HO.ReadArray a b) = FO.ReadArray  (toFOAS a) (toFOAS b)
 toFOAS (HO.WriteArray a b c) = FO.WriteArray (toFOAS a) (toFOAS b) (toFOAS c)
 
-toFOAS (HO.ParM n f) = FO.ParM (toFOAS n) (toFOASFun f)
+toFOAS (HO.ParM n f) = FO.ParM (toFOAS n) (toFOAS f)
 toFOAS (HO.Skip) = FO.Skip
 toFOAS (HO.Print a) = FO.Print (toFOAS a)
 
-toFOASFun :: (HO.Expr a -> HO.Expr b) -> FO.Expr
-toFOASFun f = FO.Lambda v e
-  where e = toFOAS $ f (HO.Var v)
-        v = getVar e
 
 getVar :: FO.Expr -> Int
 getVar = FO.exprFold getVar' max max3 max4

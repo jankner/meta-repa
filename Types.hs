@@ -74,6 +74,7 @@ instance Show TypeConst where
 
 tInt = TConst TInt
 tInt64 = TConst TInt64
+tWord = TConst TWord
 tWord64 = TConst TWord64
 tFloat = TConst TFloat
 tDouble = TConst TDouble

@@ -189,6 +189,9 @@ data Expr a where
   Var2  :: Name -> Expr a
   Value :: a -> Expr a
 
+  Lambda :: (Expr a -> Expr b) -> Expr (a -> b)
+  App :: Expr (a -> b) -> Expr a -> Expr b
+
   Binop :: Binop a -> Expr a -> Expr a -> Expr a
   Abs :: Num a => Expr a -> Expr a
   Signum :: Num a => Expr a -> Expr a
@@ -217,12 +220,12 @@ data Expr a where
   Let :: Expr a -> (Expr a -> Expr b) -> Expr b
 
   Return :: Expr a -> Expr (IO a)
-  Bind   :: Expr (IO a) -> (Expr a -> Expr (IO b)) -> Expr (IO b)
+  Bind   :: Expr (IO a) -> Expr (a -> IO b) -> Expr (IO b)
 
   If :: Expr Bool -> Expr a -> Expr a -> Expr a
 
-  IterateWhile :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> Expr s -> Expr s
-  WhileM :: (Expr s -> Expr Bool) -> (Expr s -> Expr s) -> (Expr s -> Expr (IO ())) -> Expr s -> Expr (IO ())
+  IterateWhile :: Expr (s -> Bool) -> Expr (s -> s) -> Expr s -> Expr s
+  WhileM :: Expr (s -> Bool) -> Expr (s -> s) -> Expr (s -> IO ()) -> Expr s -> Expr (IO ())
 
   RunMutableArray :: Storable a => Expr (IO (IOUArray Int a)) -> Expr (UArray Int a)
   ReadIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
@@ -231,7 +234,7 @@ data Expr a where
   NewArray   :: Storable a => Expr Int -> Expr (IO (IOUArray Int a))
   ReadArray  :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
   WriteArray :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
-  ParM       :: Expr Int -> (Expr Int -> Expr (IO ())) -> Expr (IO ())
+  ParM       :: Expr Int -> Expr (Int -> IO ()) -> Expr (IO ())
   Skip       :: Expr (IO ())
 
   Print :: Show a => Expr a -> Expr (IO ())
@@ -292,17 +295,17 @@ runM :: M (Expr a) -> Expr (IO a)
 runM (M f) = f Return
 
 newArrayE :: Storable a => Expr Int -> M (Expr (IOUArray Int a))
-newArrayE i = M (\k -> NewArray i `Bind` k)
+newArrayE i = M (\k -> NewArray i `Bind` internalize k)
 
 parM :: Expr Int -> (Expr Int -> M ()) -> M ()
-parM l body = M (\k -> ParM l (\i -> unM (body i) (\() -> Skip))
-                       `Bind` (\_ -> k ()))
+parM l body = M (\k -> ParM l (internalize (\i -> unM (body i) (\() -> Skip)))
+                       `Bind` Lambda (\_ -> k ()))
 
 writeArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> M ()
-writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` (\_ -> k ()))
+writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` Lambda (\_ -> k ()) )
 
 readArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
-readArrayE arr i = M (\k -> ReadArray arr i `Bind` k)
+readArrayE arr i = M (\k -> ReadArray arr i `Bind` Lambda k)
 
 readIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
 readIArray arr i = ReadIArray arr i
@@ -311,7 +314,7 @@ arrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
 arrayLength arr = ArrayLength arr
 
 printE :: (Computable a, Show (Internal a)) => a -> M ()
-printE a = M (\k -> Print (internalize a) `Bind` (\_ -> k ()))
+printE a = M (\k -> Print (internalize a) `Bind` Lambda (\_ -> k ()))
 
 if_ :: Computable a => Expr Bool -> a -> a -> a
 if_ e a b = externalize $ If e (internalize a) (internalize b)
@@ -320,15 +323,18 @@ iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
 iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
 
 whileE :: Computable st => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st -> M () -- a :: Expr (Internal st), action :: st -> M (), internalize :: st -> Expr (Internal st)
-whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (\a -> unM ((action . externalize) a) (\() -> Skip)) (internalize init)
-                                        `Bind` (\_ -> k ()))
+whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (Lambda (\a -> unM ((action . externalize) a) (\() -> Skip))) (internalize init)
+                                        `Bind` Lambda (\_ -> k ()))
 
 runMutableArray :: Storable a => M (Expr (IOUArray Int a)) -> Expr (UArray Int a)
 runMutableArray m = RunMutableArray (runM m)
 
+let_ :: (Computable a, Computable b) => a -> (a -> b) -> b
+let_ a f = externalize (Let (internalize a) (internalize . f . externalize))
+
 
 -- Eval
-
+{-
 eval :: Expr a -> a
 eval (Value a) = a
 
@@ -385,6 +391,7 @@ while cond step s | cond s    = while cond step (step s)
 whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
 whileM cond step action s | cond s    = action s >> whileM cond step action (step s)
                           | otherwise = return ()
+-}
 
 showExpr :: Int -> Expr a -> String
 showExpr i (Var v) = "x" ++ (show v)
@@ -404,14 +411,14 @@ showExpr i (Tup2 a b)    = "(" ++ (showExpr i a) ++ ", " ++ (showExpr i b) ++ ")
 showExpr i (Fst a) = "(fst " ++ (showExpr i a) ++ ")"
 showExpr i (Snd a) = "(snd " ++ (showExpr i a) ++ ")"
 showExpr i (Return a)      = "(return " ++ (showExpr i a) ++ ")"
-showExpr i (Bind m f)      = "(" ++ (showExpr i m) ++ " >>= " ++ (showExprFun i f) ++ ")"
+showExpr i (Bind m f)      = "(" ++ (showExpr i m) ++ " >>= " ++ (showExpr i f) ++ ")"
 showExpr i (RunMutableArray arr) = "(runMutableArray " ++ (showExpr i arr) ++ ")"
 showExpr i (ReadIArray arr ix)   = "(readIArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ ")"
 showExpr i (ArrayLength arr)     = "(arrayLength " ++ (showExpr i arr) ++ ")"
 showExpr i (NewArray l)          = "(newArray " ++ (showExpr i l) ++ ")"
 showExpr i (ReadArray arr ix)    = "(readArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ ")"
 showExpr i (WriteArray arr ix a) = "(writeArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ " " ++ (showExpr i a) ++ ")"
-showExpr i (ParM n f) = "(parM " ++ (showExpr i n) ++ " " ++ (showExprFun i f) ++ ")"
+showExpr i (ParM n f) = "(parM " ++ (showExpr i n) ++ " " ++ (showExpr i f) ++ ")"
 showExpr i Skip = "skip"
 showExpr i (Print a) = "(print " ++ (showExpr i a) ++ ")"
 showExpr i (Let e f) = "(let x" ++ (show i) ++ " = " ++ (showExpr (i+1) e) ++ " in " ++ (showExpr (i+1) (f (Var i))) ++ ")"
@@ -429,59 +436,8 @@ showBinOp i Max a b     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ 
 showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 
 
-translate :: Expr a -> Q Exp
-translate (Var2 n) = return $ VarE n
-
-translate (BoolLit b) = [| b |]
-
-translate (Binop op a b) =
-  case op of
-       Plus   -> [| $(e1) + $(e2) |]
-       Minus -> [| $(e1) - $(e2) |]
-       Mult  -> [| $(e1) * $(e2) |]
-       Max -> [| max $(translate a) $(translate b) |]
-       Min -> [| min $(translate a) $(translate b) |]
-  where e1 = translate a
-        e2 = translate b
-translate (Abs a) = [| abs $(translate a) |]
-translate (Signum a) = [| signum $(translate a) |]
-translate (FromInteger t n) = [| n |]
-
-translate (Equal a b) = [| $(translate a) == $(translate b) |]
-translate (NotEqual a b) = [| $(translate a) /= $(translate b) |]
-
-translate (LTH a b) = [| $(translate a) <  $(translate b) |]
-translate (LTE a b) = [| $(translate a) <= $(translate b) |]
-translate (GTH a b) = [| $(translate a) >  $(translate b) |]
-translate (GTE a b) = [| $(translate a) >= $(translate b) |]
-
-translate (Tup2 a b) = [| ($(translate a), $(translate b)) |]
-translate (Fst a) = [| fst $(translate a) |]
-translate (Snd a) = [| snd $(translate a) |]
-
-translate (Return a) = [|return $(translate a)|]
-translate (Bind m f) = [| $(translate m)  >>= $(trans f) |]
-
-translate (RunMutableArray arr) = [| unsafePerformIO ($(translate arr) >>= unsafeFreeze) |]
-
-translate (NewArray l)          = [| newIOUArray (0, $(translate (l-1))) |]
-translate (ReadArray arr ix)    = [| readArray $(translate arr) $(translate ix) |]
-translate (WriteArray arr ix a) = [| writeArray $(translate arr) $(translate ix) $(translate a) |]
-translate (ParM n f) = [| forM_ [0..($(translate (n-1)))] $(translateFunction f) |]
-translate (IterateWhile cond step init) = [| while $(trans cond) $(trans step) $(translate init) |]
-translate (WhileM cond step action init) = [| whileM $(trans cond) $(trans step) $(trans action) $(translate init) |]
-translate Skip       = [| return () |]
-translate (Print a)  = [| print $(translate a) |]
-
-translateFunction :: (Expr a -> Expr b) -> Q Exp
-translateFunction f =
-  do x <- newName "x"
-     fbody <- translate (f (Var2 x))
-     return $ LamE [VarP x] fbody
-
 newIOUArray :: Storable a => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
-
 
 class Computable a where
   type Internal a
@@ -526,34 +482,26 @@ instance (Computable a0, Computable a1, Computable a2,
      externalize (getN nat6 t), externalize (getN nat7 t),
      externalize (getN nat8 t))
 
-lowerFun :: (Computable a, Computable b) => (a -> b) -> Expr (Internal a) -> Expr (Internal b)
-lowerFun f = internalize . f . externalize
+instance (Computable a, Computable b) => Computable (a -> b) where
+  type Internal (a -> b) = (Internal a -> Internal b)
+  internalize f = Lambda (internalize . f . externalize)
+  externalize f = externalize . App f . internalize
 
-lowerFun2 :: (Computable a, Computable b, Computable c) => (a -> b -> c) -> Expr (Internal a) -> Expr (Internal b) -> Expr (Internal c)
-lowerFun2 f a b = internalize $ f (externalize a) (externalize b)
+instance Computable a => Computable (M a) where
+  type Internal (M a) = IO (Internal a)
+  internalize (M f) = f (Return . internalize)
+  externalize e = M (\k -> e `Bind` internalize (\x -> k x))
 
-liftFun :: (Computable a, Computable b) => (Expr (Internal a) -> Expr (Internal b)) -> a -> b
-liftFun f = externalize . f . internalize
 
-liftFun2 :: (Computable a, Computable b, Computable c) => (Expr (Internal a) -> Expr (Internal b) -> Expr (Internal c)) -> a -> b -> c
-liftFun2 f a b = externalize $ f (internalize a) (internalize b)
+lowerFun :: (Computable a, Computable b) => (a -> b) -> Expr (Internal a -> Internal b)
+lowerFun f = internalize (internalize . f . externalize)
 
-let_ :: (Computable a, Computable b) => a -> (a -> b) -> b
-let_ a f = externalize (Let (internalize a) (lowerFun f))
+lowerFun2 :: (Computable a, Computable b, Computable c) => (a -> b -> c) -> Expr (Internal a -> Internal b -> Internal c)
+lowerFun2 f = internalize $ \a b -> f (externalize a) (externalize b)
 
-class Trans a where
-  trans :: a -> Q Exp
+liftFun :: (Computable a, Computable b) => Expr (Internal a -> Internal b) -> a -> b
+liftFun f = externalize . (externalize f) . internalize
 
-instance Trans (Expr a) where
-  trans = translate
-
-instance (Computable a, Computable b) => Trans (a,b) where
-  trans = translate . internalize
-
-instance (Computable a, Trans b) => Trans (a -> b) where
-  trans f = do
-    x <- newName "x"
-    fbody <- trans (f (externalize (Var2 x)))
-    return $ LamE [VarP x] fbody
-
+liftFun2 :: (Computable a, Computable b, Computable c) => Expr (Internal a -> Internal b -> Internal c) -> a -> b -> c
+liftFun2 f a b = externalize $ (externalize f) (internalize a) (internalize b)
 

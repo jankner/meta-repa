@@ -176,6 +176,14 @@ infer (Compare op e1 e2) = do
   t2 <- infer e2
   unify t2 a
   return tBool
+infer (App e1 e2) = do
+  t1 <- infer e1
+  t2 <- infer e2
+  a <- newTypeVarT
+  b <- newTypeVarT
+  unify t1 (a --> b)
+  unify t2 a
+  return b
 infer (Lambda v e) = do
   a <- newTypeVarT
   t <- addVar v a $ infer e
@@ -471,6 +479,14 @@ inferT1 (Compare op e1 e2) = do
   (e2',t2) <- inferT1 e2
   unify2 e2 t2 a
   return (T.Compare op e1' e2', tBool)
+inferT1 (App e1 e2) = do
+  (e1',t1) <- inferT1 e1
+  (e2',t2) <- inferT1 e2
+  a <- newTypeVarT
+  b <- newTypeVarT
+  unify2 e1 t1 (a --> b)
+  unify2 e2 t2 a
+  return (T.App e1' e2', b)
 inferT1 (Lambda v e) = do
   a <- newTypeVarT
   (e', t) <- addVar v a $ inferT1 e
@@ -628,6 +644,14 @@ inferT2 (T.Compare op e1 e2) = do
   when (t1 /= t2) $ throwError ("compop with operands of different type: " ++ (show t1) ++ " " ++ (show op) ++ " " ++ (show t2))
   checkCompOp op t1
   return tBool
+inferT2 (T.App e1 e2) = do
+  t1 <- inferT2 e1
+  t2 <- inferT2 e2
+  case t1 of
+    TFun a b ->
+      do matchType2 e2 t2 a
+         return b
+    _ -> throwError ("application to non-function expression: " ++ (show e1) ++ " :: " ++ (show t2))
 inferT2 (T.Lambda v t e) = liftM (t -->) (addVar v t $ inferT2 e)
 inferT2 (T.Return e) = do
   t <- inferT2 e

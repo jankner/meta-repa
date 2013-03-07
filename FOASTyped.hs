@@ -72,6 +72,8 @@ data Expr =
   -- Int -> a -> b -> b
   | Let Int Expr Expr
   
+  -- (a -> b) -> a -> b
+  | App Expr Expr
   -- Int -> b -> (a -> b)
   | Lambda Int Type Expr
   
@@ -144,6 +146,7 @@ exprTrav f g e@(ArrayLength e1) = liftM (ArrayLength *** id) (exprTraverse f g e
 exprTrav f g e@(Print e1) = liftM (Print *** id) (exprTraverse f g e1)
 exprTrav f g e@(GetN l n e1) = liftM ((GetN l n) *** id) (exprTraverse f g e1)
 
+exprTrav f g e@(App e1 e2) = liftM2 (App **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(BinOp op e1 e2) = liftM2 ((BinOp op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Compare op e1 e2) = liftM2 ((Compare op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Tup2 e1 e2) = liftM2 (Tup2 **** g) (exprTraverse f g e1) (exprTraverse f g e2)
@@ -338,6 +341,7 @@ showExpr d Skip = showString "skip"
 showExpr d (Print a) = showApp d "print" [a]
 showExpr d (Let v e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
 showExpr d (Lambda v t e) = showString "(\\" . showsVar v . showString " :: " . shows t . showString " -> " . showsPrec 0 e . showString ")"
+showExpr d (App e1 e2) = showApp d (showsPrec 10 e1 "") [e2]
 
 showApp :: Int -> String -> [Expr] -> ShowS
 showApp d f es = showParen (d > 10) $ showString f . foldr1 (.) (map ((showString " " .) . showsPrec 11) es)
@@ -368,6 +372,7 @@ translate (GetN n i e) =
   do x <- newName "get"
      let pat = tupP $ (replicate i wildP) ++ [varP x] ++ (replicate (n-i-1) wildP)
      caseE (translate e) [match pat (normalB (varE x)) []]
+translate (App e1 e2) = [| $(translate e1) $(translate e2) |]
 translate (Let v e1 e2) = letE [valD (varP v') (normalB (translate e1)) []] (translate e2)
   where v' = mkName (showVar v)
 translate (Lambda v _ e1) = lam1E (varP v') (translate e1)
