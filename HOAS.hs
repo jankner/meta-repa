@@ -15,6 +15,7 @@ import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Array.Unsafe
 
+import Data.Int
 import Data.Word
 import Data.List
 import Data.Maybe
@@ -40,6 +41,9 @@ data Type a where
 
 data TypeConst a where
   TInt :: TypeConst Int
+  TInt64 :: TypeConst Int64
+  TWord :: TypeConst Word
+  TWord64 :: TypeConst Word64
   TDouble :: TypeConst Double
   TFloat :: TypeConst Float
   TBool :: TypeConst Bool
@@ -53,6 +57,18 @@ class (MArray IOUArray a IO, IArray UArray a) => Storable a where
 instance Storable Int where
   typeConstOf _ = TInt
   typeConstOf0  = TInt
+
+instance Storable Int64 where
+  typeConstOf _ = TInt64
+  typeConstOf0  = TInt64
+
+instance Storable Word where
+  typeConstOf _ = TWord
+  typeConstOf0  = TWord
+
+instance Storable Word64 where
+  typeConstOf _ = TWord64
+  typeConstOf0  = TWord64
 
 instance Storable Double where
   typeConstOf _ = TDouble
@@ -73,6 +89,18 @@ class Typeable a where
 instance Typeable Int where
   typeOf _ = TConst TInt
   typeOf0  = TConst TInt
+
+instance Typeable Int64 where
+  typeOf _ = TConst TInt64
+  typeOf0  = TConst TInt64
+
+instance Typeable Word where
+  typeOf _ = TConst TWord
+  typeOf0  = TConst TWord
+
+instance Typeable Word64 where
+  typeOf _ = TConst TWord64
+  typeOf0  = TConst TWord64
 
 instance Typeable Float where
   typeOf _ = TConst TFloat

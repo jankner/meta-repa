@@ -53,6 +53,9 @@ instance Show TypeVar where
   show (TypeVar v _) = "a" ++ (show v)
 
 data TypeConst = TInt
+               | TInt64
+               | TWord
+               | TWord64
                | TFloat
                | TDouble
                | TBool
@@ -61,12 +64,17 @@ data TypeConst = TInt
 
 instance Show TypeConst where
   show TInt = "Int"
+  show TInt64 = "Int64"
+  show TWord = "Word"
+  show TWord64 = "Word64"
   show TFloat = "Float"
   show TDouble = "Double"
   show TBool = "Bool"
   show TUnit = "()"
 
 tInt = TConst TInt
+tInt64 = TConst TInt64
+tWord64 = TConst TWord64
 tFloat = TConst TFloat
 tDouble = TConst TDouble
 tBool = TConst TBool

@@ -302,27 +302,27 @@ typeFromCompOp GEQ = newTVarOfClass COrd
 typeFromCompOp LEQ = newTVarOfClass COrd
 
 classMatch :: Class -> Type -> Bool
-classMatch CEq (TConst TInt) = True
-classMatch CEq (TConst TBool) = True
+classMatch CEq (TConst _) = True
 classMatch CEq (TTup2 t1 t2) = (classMatch CEq t1) && (classMatch CEq t2)
 classMatch CEq (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch CEq) ts)
-classMatch CEq (TConst TUnit) = True
-classMatch COrd (TConst TInt) = True
-classMatch COrd (TConst TBool) = True
+classMatch COrd (TConst _) = True
 classMatch COrd (TTup2 t1 t2) = (classMatch COrd t1) && (classMatch COrd t2)
 classMatch COrd (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch COrd) ts)
-classMatch COrd (TConst TUnit) = True
 classMatch CNum (TConst TInt) = True
+classMatch CNum (TConst TInt64) = True
+classMatch CNum (TConst TWord) = True
+classMatch CNum (TConst TWord64) = True
 classMatch CNum (TConst TFloat) = True
 classMatch CNum (TConst TDouble) = True
 classMatch CIntegral (TConst TInt) = True
+classMatch CIntegral (TConst TInt64) = True
+classMatch CIntegral (TConst TWord) = True
+classMatch CIntegral (TConst TWord64) = True
 classMatch CFractional (TConst TFloat) = True
 classMatch CFractional (TConst TDouble) = True
-classMatch CShow (TConst TInt) = True
-classMatch CShow (TConst TBool) = True
+classMatch CShow (TConst _) = True
 classMatch CShow (TTup2 t1 t2) = (classMatch CShow t1) && (classMatch CShow t2)
 classMatch CShow (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch CShow) ts)
-classMatch CShow (TConst TUnit) = True
 classMatch _ _ = False
 
 sortMatch :: (S.Set Class) -> Type -> Bool

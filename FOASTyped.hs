@@ -13,6 +13,8 @@ import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Array.Unsafe
 
+import Data.Int
+import Data.Word
 import Data.List
 import qualified Data.Map as M
 import qualified Data.IntMap as IM
@@ -422,6 +424,9 @@ translateCompOp LEQ q1 q2 = [| $(q1) <= $(q2) |]
 
 translateTypeConst :: TypeConst -> Q TH.Type
 translateTypeConst TInt = [t| Int |]
+translateTypeConst TInt64 = [t| Int64 |]
+translateTypeConst TWord = [t| Word |]
+translateTypeConst TWord64 = [t| Word64 |]
 translateTypeConst TFloat = [t| Float |]
 translateTypeConst TDouble =  [t| Double |]
 translateTypeConst TBool = [t| Bool |]

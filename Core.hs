@@ -18,7 +18,10 @@ translateType (HO.TIArr t) = TIArr (translateType t)
 translateType (HO.TIO   t) = TIO   (translateType t)
 
 translateTConst :: HO.TypeConst a -> TypeConst
-translateTConst HO.TInt = TInt 
+translateTConst HO.TInt = TInt
+translateTConst HO.TInt64 = TInt64
+translateTConst HO.TWord = TWord
+translateTConst HO.TWord64 = TWord64
 translateTConst HO.TFloat = TFloat 
 translateTConst HO.TDouble = TDouble 
 translateTConst HO.TBool = TBool 
@@ -98,7 +101,6 @@ toFOASFun :: (HO.Expr a -> HO.Expr b) -> FO.Expr
 toFOASFun f = FO.Lambda v e
   where e = toFOAS $ f (HO.Var v)
         v = getVar e
-
 
 getVar :: FO.Expr -> Int
 getVar = FO.exprFold getVar' max max3 max4
