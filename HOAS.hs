@@ -37,7 +37,8 @@ data Type a where
   TIArr :: Type a -> Type (UArray Int a)
   TFun :: Type a -> Type b -> Type (a -> b)
   TIO :: Type a -> Type (IO a)
-  
+
+
 
 data TypeConst a where
   TInt :: TypeConst Int
@@ -47,10 +48,11 @@ data TypeConst a where
   TDouble :: TypeConst Double
   TFloat :: TypeConst Float
   TBool :: TypeConst Bool
+  TUnit :: TypeConst ()
 
 deriving instance Show (TypeConst a)
 
-class (MArray IOUArray a IO, IArray UArray a) => Storable a where
+class (Typeable a, MArray IOUArray a IO, IArray UArray a) => Storable a where
   typeConstOf :: a -> TypeConst a
   typeConstOf0 :: TypeConst a
 
@@ -114,9 +116,34 @@ instance Typeable Bool where
   typeOf _ = TConst TBool
   typeOf0  = TConst TBool
 
+instance Typeable () where
+  typeOf _ = TConst TUnit
+  typeOf0  = TConst TUnit
+  
+
 instance (Typeable a, Typeable b) => Typeable (a,b) where
   typeOf _ = TTup2 (typeOf0 :: Type a) (typeOf0 :: Type b)
   typeOf0  = TTup2 (typeOf0 :: Type a) (typeOf0 :: Type b)
+
+instance (Typeable a, Typeable b, Typeable c) => Typeable (Cons a (Cons b (Ein c)) Id) where
+  typeOf _ = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
+  typeOf0  = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
+
+instance Typeable a => Typeable (IOUArray Int a) where
+  typeOf _ = TMArr typeOf0
+  typeOf0  = TMArr typeOf0
+
+instance Typeable a => Typeable (UArray Int a) where
+  typeOf _ = TIArr typeOf0
+  typeOf0  = TIArr typeOf0
+
+instance (Typeable a, Typeable b) => Typeable (a -> b) where
+  typeOf _ = TFun typeOf0 typeOf0 
+  typeOf0  = TFun typeOf0 typeOf0
+
+instance Typeable a => Typeable (IO a) where
+  typeOf _ = TIO typeOf0
+  typeOf0  = TIO typeOf0
 
 data Z = Z
 data S n = S n
@@ -189,7 +216,7 @@ data Expr a where
   Var2  :: Name -> Expr a
   Value :: a -> Expr a
 
-  Lambda :: (Expr a -> Expr b) -> Expr (a -> b)
+  Lambda :: Type a -> (Expr a -> Expr b) -> Expr (a -> b)
   App :: Expr (a -> b) -> Expr a -> Expr b
 
   Binop :: Binop a -> Expr a -> Expr a -> Expr a
@@ -282,7 +309,7 @@ getN n et = GetN (tupLen (fake et)) n et
   where fake :: Tup t => Expr (t Id) -> t Id
         fake _ = tupFake
 
-data M a = M { unM :: forall b. ((a -> Expr (IO b)) -> Expr (IO b)) }
+data M a = M { unM :: forall b. Typeable b => ((a -> Expr (IO b)) -> Expr (IO b)) }
 
 instance Monad M where
   return a = M $ \k -> k a
@@ -291,21 +318,21 @@ instance Monad M where
 instance Functor M where
   fmap f (M g) = M (\k -> g (k . f))
 
-runM :: M (Expr a) -> Expr (IO a)
+runM :: Typeable a => M (Expr a) -> Expr (IO a)
 runM (M f) = f Return
 
-newArrayE :: Storable a => Expr Int -> M (Expr (IOUArray Int a))
+newArrayE :: (Storable a) => Expr Int -> M (Expr (IOUArray Int a))
 newArrayE i = M (\k -> NewArray i `Bind` internalize k)
 
 parM :: Expr Int -> (Expr Int -> M ()) -> M ()
 parM l body = M (\k -> ParM l (internalize (\i -> unM (body i) (\() -> Skip)))
-                       `Bind` Lambda (\_ -> k ()))
+                       `Bind` Lambda typeOf0 (\_ -> k ()))
 
 writeArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> M ()
-writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` Lambda (\_ -> k ()) )
+writeArrayE arr i a = M (\k -> WriteArray arr i a `Bind` Lambda typeOf0 (\_ -> k ()) )
 
 readArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
-readArrayE arr i = M (\k -> ReadArray arr i `Bind` Lambda k)
+readArrayE arr i = M (\k -> ReadArray arr i `Bind` Lambda typeOf0 k)
 
 readIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
 readIArray arr i = ReadIArray arr i
@@ -314,7 +341,7 @@ arrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
 arrayLength arr = ArrayLength arr
 
 printE :: (Computable a, Show (Internal a)) => a -> M ()
-printE a = M (\k -> Print (internalize a) `Bind` Lambda (\_ -> k ()))
+printE a = M (\k -> Print (internalize a) `Bind` Lambda typeOf0 (\_ -> k ()))
 
 if_ :: Computable a => Expr Bool -> a -> a -> a
 if_ e a b = externalize $ If e (internalize a) (internalize b)
@@ -322,9 +349,9 @@ if_ e a b = externalize $ If e (internalize a) (internalize b)
 iterateWhile :: Computable st => (st -> Expr Bool) -> (st -> st) -> st -> st
 iterateWhile cond step init = externalize $ IterateWhile (lowerFun cond) (lowerFun step) (internalize init)
 
-whileE :: Computable st => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st -> M () -- a :: Expr (Internal st), action :: st -> M (), internalize :: st -> Expr (Internal st)
-whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (Lambda (\a -> unM ((action . externalize) a) (\() -> Skip))) (internalize init)
-                                        `Bind` Lambda (\_ -> k ()))
+whileE :: (Typeable (Internal st), Computable st) => (st -> Expr Bool) -> (st -> st) -> (st -> M ()) -> st -> M () -- a :: Expr (Internal st), action :: st -> M (), internalize :: st -> Expr (Internal st)
+whileE cond step action init = M (\k -> WhileM (lowerFun cond) (lowerFun step) (Lambda typeOf0 (\a -> unM ((action . externalize) a) (\() -> Skip))) (internalize init)
+                                        `Bind` Lambda typeOf0 (\_ -> k ()))
 
 runMutableArray :: Storable a => M (Expr (IOUArray Int a)) -> Expr (UArray Int a)
 runMutableArray m = RunMutableArray (runM m)
@@ -439,13 +466,13 @@ showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ 
 newIOUArray :: Storable a => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
 
-class Computable a where
+class Typeable (Internal a) => Computable a where
   type Internal a
   internalize :: a -> Expr (Internal a)
   externalize :: Expr (Internal a) -> a
 
 
-instance Computable (Expr a) where
+instance Typeable a => Computable (Expr a) where
   type Internal (Expr a) = a
   internalize = id
   externalize = id
@@ -464,30 +491,30 @@ instance (Computable a, Computable b, Computable c) => Computable (a,b,c) where
     (externalize (getN Z t), externalize (getN nat1 t), externalize (getN nat2 t))
 
 
-instance (Computable a0, Computable a1, Computable a2,
-          Computable a3, Computable a4, Computable a5,
-          Computable a6, Computable a7, Computable a8) => Computable (a0,a1,a2,a3,a4,a5,a6,a7,a8) where
-  type Internal (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
-     Cons (Internal a0) (Cons (Internal a1) (Cons (Internal a2)
-    (Cons (Internal a3) (Cons (Internal a4) (Cons (Internal a5)
-    (Cons (Internal a6) (Cons (Internal a7) (Ein  (Internal a8))))))))) Id
-  internalize (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
-    TupN ((internalize a0) ::. (internalize a1) ::. (internalize a2) ::.
-          (internalize a3) ::. (internalize a4) ::. (internalize a5) ::.
-          (internalize a6) ::. (internalize a7) ::. (Ein (internalize a8)))
-  externalize t =
-    (externalize (getN Z    t), externalize (getN nat1 t),
-     externalize (getN nat2 t), externalize (getN nat3 t),
-     externalize (getN nat4 t), externalize (getN nat5 t),
-     externalize (getN nat6 t), externalize (getN nat7 t),
-     externalize (getN nat8 t))
+--instance (Computable a0, Computable a1, Computable a2,
+--          Computable a3, Computable a4, Computable a5,
+--          Computable a6, Computable a7, Computable a8) => Computable (a0,a1,a2,a3,a4,a5,a6,a7,a8) where
+--  type Internal (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
+--     Cons (Internal a0) (Cons (Internal a1) (Cons (Internal a2)
+--    (Cons (Internal a3) (Cons (Internal a4) (Cons (Internal a5)
+--    (Cons (Internal a6) (Cons (Internal a7) (Ein  (Internal a8))))))))) Id
+--  internalize (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
+--    TupN ((internalize a0) ::. (internalize a1) ::. (internalize a2) ::.
+--          (internalize a3) ::. (internalize a4) ::. (internalize a5) ::.
+--          (internalize a6) ::. (internalize a7) ::. (Ein (internalize a8)))
+--  externalize t =
+--    (externalize (getN Z    t), externalize (getN nat1 t),
+--     externalize (getN nat2 t), externalize (getN nat3 t),
+--     externalize (getN nat4 t), externalize (getN nat5 t),
+--     externalize (getN nat6 t), externalize (getN nat7 t),
+--     externalize (getN nat8 t))
 
 instance (Computable a, Computable b) => Computable (a -> b) where
   type Internal (a -> b) = (Internal a -> Internal b)
-  internalize f = Lambda (internalize . f . externalize)
+  internalize f = Lambda typeOf0 (internalize . f . externalize)
   externalize f = externalize . App f . internalize
 
-instance Computable a => Computable (M a) where
+instance (Computable a) => Computable (M a) where
   type Internal (M a) = IO (Internal a)
   internalize (M f) = f (Return . internalize)
   externalize e = M (\k -> e `Bind` internalize (\x -> k x))

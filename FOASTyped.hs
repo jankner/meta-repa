@@ -444,7 +444,7 @@ translateType :: Type -> Q TH.Type
 translateType (TConst tc) = translateTypeConst tc
 translateType (TFun  t1 t2) = [t| $(translateType t1) -> $(translateType t2) |]
 translateType (TTup2 t1 t2) = [t| ($(translateType t1), $(translateType t2)) |]
---translateType (TTupN ts) = tupleT (map translateType ts)
+translateType (TTupN ts) = foldl appT (tupleT $ length ts) (map translateType ts)
 translateType (TMArr t) = [t| IOUArray Int $(translateType t) |]
 translateType (TIArr t) = [t| UArray Int $(translateType t) |]
 translateType (TIO   t) = [t| IO $(translateType t) |]

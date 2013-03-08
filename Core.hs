@@ -36,13 +36,13 @@ toFOAS (HO.Binop op a b) =
     HO.Mult  -> FO.BinOp FO.Mult  (toFOAS a) (toFOAS b)
     HO.Quot  -> FO.BinOp FO.Quot  (toFOAS a) (toFOAS b)
     HO.Rem   -> FO.BinOp FO.Rem   (toFOAS a) (toFOAS b)
-    HO.Div   -> FO.BinOp FO.Div  (toFOAS a) (toFOAS b)
+    HO.Div   -> FO.BinOp FO.Div   (toFOAS a) (toFOAS b)
     HO.Mod   -> FO.BinOp FO.Mod   (toFOAS a) (toFOAS b)
     HO.FDiv  -> FO.BinOp FO.FDiv  (toFOAS a) (toFOAS b)
-    HO.And   -> FO.BinOp FO.And  (toFOAS a) (toFOAS b)
-    HO.Or    -> FO.BinOp FO.Or   (toFOAS a) (toFOAS b)
-    HO.Min   -> FO.BinOp FO.Min  (toFOAS a) (toFOAS b)
-    HO.Max   -> FO.BinOp FO.Max  (toFOAS a) (toFOAS b)
+    HO.And   -> FO.BinOp FO.And   (toFOAS a) (toFOAS b)
+    HO.Or    -> FO.BinOp FO.Or    (toFOAS a) (toFOAS b)
+    HO.Min   -> FO.BinOp FO.Min   (toFOAS a) (toFOAS b)
+    HO.Max   -> FO.BinOp FO.Max   (toFOAS a) (toFOAS b)
 toFOAS (HO.Abs a)    = FO.UnOp FO.Abs    (toFOAS a)
 toFOAS (HO.Signum a) = FO.UnOp FO.Signum (toFOAS a)
 toFOAS (HO.Recip a)  = FO.UnOp FO.Recip  (toFOAS a)
@@ -65,7 +65,7 @@ toFOAS (HO.TupN t) = FO.TupN (HO.tupMap toFOAS t)
 toFOAS (HO.GetN l n a) = FO.GetN l (HO.natToInt n) (toFOAS a)
 
 toFOAS (HO.App f a) = FO.App (toFOAS f) (toFOAS a)
-toFOAS (HO.Lambda f) = FO.Lambda v e
+toFOAS (HO.Lambda t f) = FO.Lambda v (translateType t) e
   where e = toFOAS $ f (HO.Var v)
         v = getVar e
 
@@ -107,7 +107,7 @@ getVar :: FO.Expr -> Int
 getVar = FO.exprFold getVar' max max3 max4
 
 getVar' :: (FO.Expr -> Int) -> FO.Expr -> Int
-getVar' f (FO.Lambda i _) = i+1
+getVar' f (FO.Lambda i _ _) = i+1
 getVar' f (FO.Let i _ _) = i+1
 getVar' f e | isAtomic e = 0
             | otherwise  = f e

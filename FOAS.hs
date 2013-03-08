@@ -53,7 +53,7 @@ data Expr =
   -- (a -> b) -> a -> b
   | App Expr Expr
   -- Int -> b -> (a -> b)
-  | Lambda Int Expr
+  | Lambda Int Type Expr
   
   -- a -> IO a
   | Return Expr
@@ -115,6 +115,7 @@ exprRec f g2 g3 g4 e@(RunMutableArray e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(ArrayLength e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Print e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(GetN l n e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Lambda v t e1) = exprFold f g2 g3 g4 e1
 
 exprRec f g2 g3 g4 e@(App e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(BinOp op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
@@ -152,7 +153,7 @@ exprTrav f g e@(FromIntegral t e1) = liftM ((FromIntegral t) *** id) (exprTraver
 exprTrav f g e@(UnOp op e1) = liftM ((UnOp op) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
-exprTrav f g e@(Lambda v e1) = liftM ((Lambda v) *** id) (exprTraverse f g e1)
+exprTrav f g e@(Lambda v t e1) = liftM ((Lambda v t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Return e1) = liftM (Return *** id) (exprTraverse f g e1)
 exprTrav f g e@(NewArray e1) = liftM (NewArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(RunMutableArray e1) = liftM (RunMutableArray *** id) (exprTraverse f g e1)
@@ -241,13 +242,13 @@ thing f (Let v e1 e2) = do
   (e1',vs1) <- f e1
   v1 <- addExpr e1' vs1
   return (Let v (Var v1) e2Final, IS.difference (IS.union vs1 vs2) (IS.singleton v))
-thing f (Lambda v e) = do
+thing f (Lambda v t e) = do
   (e',vs) <- f e
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
   let eFinal = replaceExprs v exprs e' -- trace ("exprs " ++ (show v) ++ ": " ++ (show exprs)) $ 
   put (st {exprMap = newMap})
-  return (Lambda v eFinal, IS.difference vs (IS.singleton v))
+  return (Lambda v t eFinal, IS.difference vs (IS.singleton v))
 thing f e | isAtomic e = return (e, IS.empty)
 thing f e | otherwise  = do
   (e',vs) <- f e
@@ -355,7 +356,7 @@ showExpr d (ParM n f) = showApp d "parM" [n,f]
 showExpr d Skip = showString "skip"
 showExpr d (Print a) = showApp d "print" [a]
 showExpr d (Let v e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
-showExpr d (Lambda v e) = showString "(\\" . showsVar v . showString " -> " . showsPrec 0 e . showString ")"
+showExpr d (Lambda v t e) = showString "(\\" . showsVar v . showString " -> " . showsPrec 0 e . showString ")"
 showExpr d (App e1 e2) = showApp d (showsPrec 10 e1 "") [e2]
 
 showsTup (a:[]) = showsPrec 0 a . showString ")"

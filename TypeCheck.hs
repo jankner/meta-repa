@@ -184,9 +184,10 @@ infer (App e1 e2) = do
   unify t1 (a --> b)
   unify t2 a
   return b
-infer (Lambda v e) = do
+infer (Lambda v t' e) = do
   a <- newTypeVarT
   t <- addVar v a $ infer e
+  unify a t'
   return (a --> t)
 infer (Return e) = do
   t <- infer e
@@ -487,10 +488,11 @@ inferT1 (App e1 e2) = do
   unify2 e1 t1 (a --> b)
   unify2 e2 t2 a
   return (T.App e1' e2', b)
-inferT1 (Lambda v e) = do
+inferT1 (Lambda v t e) = do
   a <- newTypeVarT
-  (e', t) <- addVar v a $ inferT1 e
-  return (T.Lambda v a e', a --> t)
+  (e', t') <- addVar v a $ inferT1 e
+  unify t a
+  return (T.Lambda v a e', a --> t')
 inferT1 (Return e) = do
   (e', t) <- inferT1 e
   return (T.Return e', TIO t)
