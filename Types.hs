@@ -1,5 +1,28 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Types where
+module Types
+  ( Class(..)
+  , TRef
+  , Type(..)
+  , TypeVar(..)
+  , Uniq
+  , uniq
+  , tRef
+  , TypeConst(..)
+  , tInt
+  , tInt64
+  , tWord
+  , tWord64
+  , tFloat
+  , tDouble
+  , tBool
+  , tUnit
+  , (-->)
+  , Env
+  , Subst
+  , (|.|)
+  , applySubst
+  , SortContext
+  ) where
 
 import Data.IORef
 import qualified Data.Map as M
@@ -30,10 +53,14 @@ instance Show Type where
   showsPrec d (TVar v) = shows v
   showsPrec d (TConst t) = shows t
   showsPrec d (TTup2 t1 t2) = showString "(" . showsPrec 1 t1 . showString "," . showsPrec 1 t2 . showString ")"
+  showsPrec d (TTupN ts) = showString "(" . showsTup ts
   showsPrec d (TMArr t) = showString "{" . showsPrec 1 t . showString "}"
   showsPrec d (TIArr t) = showString "[" . showsPrec 1 t . showString "]"
   showsPrec d (TFun t1 t2) = showParen (d > 9) $ showsPrec 10 t1 . showString " -> " . showsPrec 10 t2
   showsPrec d (TIO t) = showParen (d > 10) $ showString "IO " . showsPrec 11 t
+
+showsTup (a:[]) = showsPrec 0 a . showString ")"
+showsTup (a:as) = showsPrec 0 a . showString "," . showsTup as
 
 data TypeVar = TypeVar Uniq TRef
   deriving Eq

@@ -43,7 +43,7 @@ data Expr =
   | BinOp BinOp Expr Expr
   -- P a -> a -> a
   | UnOp UnOp Expr
-  -- Num a => Integer -> Int ?
+  -- Num a => Integer -> a
   | FromInteger TypeConst Integer
   -- Fractional a => Rational -> a
   | FromRational TypeConst Rational
@@ -325,6 +325,8 @@ showExpr d (BoolLit b)     = shows b
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]
 showExpr d (Snd a) = showApp d "fst" [a]
+showExpr d (TupN as) = showString "(" . showsTup as
+showExpr d (GetN l n a) = showApp d ("get" ++ (show l) ++ "_" ++ (show n)) [a]
 showExpr d (Return a) = showApp d "return" [a]
 showExpr d (Bind m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
 showExpr d (If cond a b) = showParen (d > 0) $ showString "if " . showsPrec 0 cond . showString " then " . showsPrec 0 a . showString " else " . showsPrec 0 b
@@ -342,6 +344,9 @@ showExpr d (Print a) = showApp d "print" [a]
 showExpr d (Let v e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
 showExpr d (Lambda v t e) = showString "(\\" . showsVar v . showString " :: " . shows t . showString " -> " . showsPrec 0 e . showString ")"
 showExpr d (App e1 e2) = showApp d (showsPrec 10 e1 "") [e2]
+
+showsTup (a:[]) = showsPrec 0 a . showString ")"
+showsTup (a:as) = showsPrec 0 a . showString "," . showsTup as
 
 showApp :: Int -> String -> [Expr] -> ShowS
 showApp d f es = showParen (d > 10) $ showString f . foldr1 (.) (map ((showString " " .) . showsPrec 11) es)
