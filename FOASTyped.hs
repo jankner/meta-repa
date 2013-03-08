@@ -218,7 +218,7 @@ cse e = evalState (stuff e) (CSEState {exprMap = IM.empty, varCounter = 0x400000
 thing :: (Expr -> CSEM (Expr,IS.IntSet)) -> Expr -> CSEM (Expr,IS.IntSet)
 thing f (Var v) = return (Var v, IS.singleton v)
 thing f (Let v e1 e2) = do
-  (e2',vs2) <- f e2
+  (e2',vs2) <- thing f e2
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
   let e2Final = replaceExprs v exprs e2'
@@ -227,7 +227,7 @@ thing f (Let v e1 e2) = do
   v1 <- addExpr e1' vs1
   return (Let v (Var v1) e2Final, IS.difference (IS.union vs1 vs2) (IS.singleton v))
 thing f (Lambda v t e) = do
-  (e',vs) <- f e
+  (e',vs) <- thing f e
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
   let eFinal = replaceExprs v exprs e'
