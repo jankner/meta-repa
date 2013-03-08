@@ -395,15 +395,15 @@ zonkExpr = T.exprTraverse0 zonkExpr'
 
 zonkExpr' k (T.Lambda v t e) = do
   t' <- zonkType t
-  e' <- k e
+  e' <- zonkExpr' k e
   return (T.Lambda v t' e')
 zonkExpr' k (T.FromIntegral t e) = do
   t' <- zonkType t
-  e' <- k e
+  e' <- zonkExpr' k e
   return (T.FromIntegral t' e')
 zonkExpr' k (T.NewArray t e) = do
   t' <- zonkType t
-  e' <- k e
+  e' <- zonkExpr' k e
   return (T.NewArray t' e')
 zonkExpr' k e | T.isAtomic e = return e
               | otherwise    = k e
