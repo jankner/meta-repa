@@ -39,8 +39,6 @@ data Type a where
   TFun :: Type a -> Type b -> Type (a -> b)
   TIO :: Type a -> Type (IO a)
 
-
-
 data TypeConst a where
   TInt :: TypeConst Int
   TInt64 :: TypeConst Int64
@@ -430,6 +428,7 @@ showExpr i (Abs a)         = "(abs " ++ (showExpr i a) ++ ")"
 showExpr i (Signum a)      = "(signum " ++ (showExpr i a) ++ ")"
 showExpr i (FromInteger t n) = show n
 showExpr i (FromRational t r) = "(fromRational " ++ (show r) ++ ")"
+showExpr i (FromIntegral t a) = "(fromIntegral " ++ (showExpr i a) ++ ")"
 showExpr i (BoolLit b)     = show b
 showExpr i (Equal a b)     = "(" ++ (showExpr i a) ++ " == " ++ (showExpr i b) ++ ")"
 showExpr i (NotEqual a b)     = "(" ++ (showExpr i a) ++ " /= " ++ (showExpr i b) ++ ")"
@@ -437,9 +436,13 @@ showExpr i (LTH a b)     = "(" ++ (showExpr i a) ++ " < " ++ (showExpr i b) ++ "
 showExpr i (LTE a b)     = "(" ++ (showExpr i a) ++ " <= " ++ (showExpr i b) ++ ")"
 showExpr i (GTH a b)     = "(" ++ (showExpr i a) ++ " > " ++ (showExpr i b) ++ ")"
 showExpr i (GTE a b)     = "(" ++ (showExpr i a) ++ " >= " ++ (showExpr i b) ++ ")"
+showExpr i (TupN t)      = "(" ++ (intercalate "," $ tupMap (showExpr i) t) ++ ")"
+showExpr i (GetN l n e)  = "(get" ++ (show l) ++ "_" ++ (show (natToInt n)) ++ " " ++ (showExpr i e) ++ ")"
 showExpr i (Tup2 a b)    = "(" ++ (showExpr i a) ++ ", " ++ (showExpr i b) ++ ")"
 showExpr i (Fst a) = "(fst " ++ (showExpr i a) ++ ")"
 showExpr i (Snd a) = "(snd " ++ (showExpr i a) ++ ")"
+showExpr i (If a b c) = "if " ++ (showExpr i a) ++ " then " ++ (showExpr i b) ++ " else " ++ (showExpr i c)
+showExpr i (IterateWhile a b c) = "(iterateWhile " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ " " ++ (showExpr i c) ++ ")"
 showExpr i (Return a)      = "(return " ++ (showExpr i a) ++ ")"
 showExpr i (Bind m f)      = "(" ++ (showExpr i m) ++ " >>= " ++ (showExpr i f) ++ ")"
 showExpr i (RunMutableArray arr) = "(runMutableArray " ++ (showExpr i arr) ++ ")"
@@ -452,6 +455,7 @@ showExpr i (ParM n f) = "(parM " ++ (showExpr i n) ++ " " ++ (showExpr i f) ++ "
 showExpr i Skip = "skip"
 showExpr i (Print a) = "(print " ++ (showExpr i a) ++ ")"
 showExpr i (Let e f) = "(let x" ++ (show i) ++ " = " ++ (showExpr (i+1) e) ++ " in " ++ (showExpr (i+1) (f (Var i))) ++ ")"
+showExpr i (Lambda t f) = showExprFun i f
 
 
 showExprFun :: Int -> (Expr a -> Expr b) -> String
@@ -462,6 +466,13 @@ showBinOp :: Int -> Binop a -> Expr a -> Expr a -> String
 showBinOp i Minus a b = (showExpr i a) ++ " - " ++ (showExpr i b)
 showBinOp i Plus  a b = (showExpr i a) ++ " + " ++ (showExpr i b)
 showBinOp i Mult  a b = (showExpr i a) ++ " * " ++ (showExpr i b)
+showBinOp i Quot  a b = (showExpr i a) ++ " `quot` " ++ (showExpr i b)
+showBinOp i Rem   a b = (showExpr i a) ++ " `rem` " ++ (showExpr i b)
+showBinOp i Div   a b = (showExpr i a) ++ " `div` " ++ (showExpr i b)
+showBinOp i Mod   a b = (showExpr i a) ++ " `mod` " ++ (showExpr i b)
+showBinOp i FDiv  a b = (showExpr i a) ++ " / " ++ (showExpr i b)
+showBinOp i And   a b = (showExpr i a) ++ " && " ++ (showExpr i b)
+showBinOp i Or    a b = (showExpr i a) ++ " || " ++ (showExpr i b)
 showBinOp i Max a b     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 
