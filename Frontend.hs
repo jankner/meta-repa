@@ -23,6 +23,10 @@ import HOAS hiding (Z)
 
 infixr 8 ^^
 infixr 8 ^
+infixl 7 `div`
+infixl 7 `mod`
+infixl 7 `quot`
+infixl 7 `rem`
 infix  4 ==
 infix  4 /=
 infix  4 >=
@@ -93,11 +97,31 @@ odd a = a `rem` 2 == 1
 x0 ^ y0 =
   if_ (y0 == 0)
     1
-    (P.fst (iterateWhile (\(x,y) -> y == 0) 
-      (\(x,y) -> if_ (even y)
-        (x*x, y `quot` 2)
-        (x*x0, y-1))
-      (x0,y0)))
+    (let_
+      loop1
+      (\(x,y) ->
+        if_ (y == 1)
+        --then
+          x
+        --else
+          (let_
+            (loop2 x y)
+            (\(x,y,z) -> x*z))))
+  where loop1 =
+            (iterateWhile (\(x,y) -> y /= 1 && even y) 
+              (\(x,y) -> (x*x, y `quot` 2))
+              (x0,y0))
+        loop2 :: (Num a, Computable a, Integral b, Storable b) => a -> Expr b -> (a, Expr b, a)
+        loop2 x y =
+            (iterateWhile (\(x,y,z) -> y /= 1)
+              (\(x,y,z) ->
+                if_ (even y)
+                --then
+                  (x*x, y `quot` 2, z)
+                --else
+                  (x*x, (y-1) `quot` 2, z * x))
+              (x*x, (y-1) `quot` 2, x))
+            
 
 (^^) :: (Fractional a, Computable a, Integral b, Storable b) => a -> Expr b -> a
 x ^^ y = if_ (y <= 0)
@@ -242,6 +266,9 @@ instance Arr Push where
 index :: Pull sh a -> Shape sh -> a
 index (Pull ixf s) = ixf
 
+zipWith :: (Computable a, Computable b, Computable c) => (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
+zipWith f (Pull ixf1 sh1) (Pull ixf2 sh2) = Pull (\ix -> f (ixf1 ix) (ixf2 ix)) (intersectDim sh1 sh2)
+
 scanS :: (Computable a, Computable b) => (a -> b -> a) -> a -> Pull (sh :. Expr Length) b -> Push (sh:.Expr Length) a
 scanS f z (Pull ixf (sh:.n)) = Push m (sh:.n+1)
   where m k = forShape sh $ \i -> let ish = fromIndex sh i in
@@ -255,6 +282,12 @@ foldS s f (Pull ixf (sh :. n)) = fromFunction (\sh -> P.snd $ iterateWhile (\(i,
 
 sumS :: (P.Num a, Computable a) => Pull (sh :. Expr Length) a -> Pull sh a
 sumS = foldS 0 (+)
+
+foldAllS :: Computable a => (a -> a -> a) -> a -> Pull sh a -> a
+foldAllS f z (Pull ixf sh) = P.snd $ 
+  iterateWhile (\(i,_) -> i < (size sh)) 
+    (\(i,x) -> (i+1, x `f` (ixf (fromIndex sh i))))
+    (0,z)
 
 interleave2 :: Push sh a -> Push sh a -> Push sh a
 interleave2 (Push m1 (sh1 :. l1)) (Push m2 (sh2 :. l2)) = Push m (sh1 :. (l1 + l2))
