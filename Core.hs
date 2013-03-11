@@ -25,6 +25,7 @@ translateTConst HO.TWord64 = TWord64
 translateTConst HO.TFloat = TFloat 
 translateTConst HO.TDouble = TDouble 
 translateTConst HO.TBool = TBool 
+translateTConst HO.TUnit = TUnit
 
 toFOAS :: HO.Expr a -> FO.Expr
 toFOAS = FO.fixTuples . toFOAS'
@@ -59,6 +60,8 @@ toFOAS' (HO.GTH      a b) = FO.Compare FO.GTH (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.LTH      a b) = FO.Compare FO.LTH (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.GTE      a b) = FO.Compare FO.GEQ (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.LTE      a b) = FO.Compare FO.LEQ (toFOAS' a) (toFOAS' b)
+
+toFOAS' (HO.Unit) = FO.Unit
 
 toFOAS' (HO.Tup2 a b) = FO.Tup2 (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.Fst a) = FO.Fst (toFOAS' a)

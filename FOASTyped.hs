@@ -56,6 +56,8 @@ data Expr =
 
   -- CompOp a -> a -> a -> Bool
   | Compare CompOp Expr Expr
+
+  | Unit
   
   -- a -> b -> (a,b)
   | Tup2 Expr Expr
@@ -352,6 +354,7 @@ isAtomic (FromInteger _ _)  = True
 isAtomic (FromRational _ _) = True
 isAtomic (BoolLit _)        = True
 isAtomic (Skip)             = True
+isAtomic (Unit)             = True
 isAtomic _ = False
 
 -- CSE
@@ -486,6 +489,7 @@ showExpr d (FromRational t r) =
     TDouble -> shows (fromRational r :: Double)
 showExpr d (FromIntegral t a) = showApp d "fromIntegral" [a]
 showExpr d (BoolLit b)     = shows b
+showExpr d (Unit) = showString "()"
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]
 showExpr d (Snd a) = showApp d "snd" [a]
@@ -533,6 +537,7 @@ translate (FromRational t (a :% b)) = sigE [| fromRational (a :% b) |] (translat
 translate (FromIntegral t e) = sigE [| fromIntegral $(translate e) |] (translateType t)
 translate (BoolLit b) = [| b |]
 translate (Compare op e1 e2) = translateCompOp op (translate e1) (translate e2)
+translate (Unit) = [| () |]
 translate (Tup2 e1 e2) = tupE [translate e1, translate e2]
 translate (Fst e) = [| fst $(translate e) |]
 translate (Snd e) = [| snd $(translate e) |]

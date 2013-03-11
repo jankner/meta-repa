@@ -34,6 +34,9 @@ data Expr =
 
   -- CompOp a -> a -> a -> Bool
   | Compare CompOp Expr Expr
+
+  -- ()
+  | Unit
   
   -- a -> b -> (a,b)
   | Tup2 Expr Expr
@@ -236,6 +239,7 @@ isAtomic (Var _)            = True
 isAtomic (FromInteger _ _)  = True
 isAtomic (FromRational _ _) = True
 isAtomic (BoolLit _)        = True
+isAtomic (Unit)             = True
 isAtomic (Skip)             = True
 isAtomic _ = False
 
@@ -370,6 +374,7 @@ showExpr d (FromRational t r) =
     TDouble -> shows (fromRational r :: Double)
 showExpr d (FromIntegral t a) = showApp d "fromIntegral" [a]
 showExpr d (BoolLit b) = shows b
+showExpr d (Unit) = showString "()"
 showExpr d (Tup2 a b) = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
 showExpr d (Fst a) = showApp d "fst" [a]
 showExpr d (Snd a) = showApp d "fst" [a]

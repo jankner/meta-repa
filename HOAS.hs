@@ -29,6 +29,7 @@ import System.IO.Unsafe
 
 import Language.Haskell.TH hiding (Type)
 
+
 data Type a where
   TConst :: TypeConst a -> Type a
   TTup2 :: Type a -> Type b -> Type (a,b)
@@ -236,6 +237,8 @@ data Expr a where
   LTH :: Ord a => Expr a -> Expr a -> Expr Bool
   GTE :: Ord a => Expr a -> Expr a -> Expr Bool
   LTE :: Ord a => Expr a -> Expr a -> Expr Bool
+
+  Unit :: Expr ()
 
   Tup2 :: Expr a -> Expr b -> Expr (a,b)
   Fst :: Expr (a,b) -> Expr a
@@ -466,6 +469,7 @@ showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ 
 newIOUArray :: Storable a => (Int, Int) -> IO (IOUArray Int a)
 newIOUArray = newArray_
 
+
 class Typeable (Internal a) => Computable a where
   type Internal a
   internalize :: a -> Expr (Internal a)
@@ -513,6 +517,11 @@ instance (Computable a, Computable b) => Computable (a -> b) where
   type Internal (a -> b) = (Internal a -> Internal b)
   internalize f = Lambda typeOf0 (internalize . f . externalize)
   externalize f = externalize . App f . internalize
+
+instance Computable () where
+  type Internal () = ()
+  internalize () = Unit
+  externalize e = ()
 
 instance (Computable a) => Computable (M a) where
   type Internal (M a) = IO (Internal a)

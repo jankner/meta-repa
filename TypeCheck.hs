@@ -129,6 +129,7 @@ infer (FromIntegral tr e) = do
   unify t a
   return tr
 infer (BoolLit b) = return tBool
+infer (Unit) = return tUnit
 infer (Tup2 e1 e2) = do
   t1 <- infer e1
   t2 <- infer e2
@@ -433,6 +434,7 @@ inferT1 (FromIntegral tr e) = do
   unify t a
   return (T.FromIntegral tr e', tr)
 inferT1 (BoolLit b) = return (T.BoolLit b, tBool)
+inferT1 (Unit) = return (T.Unit, tUnit)
 inferT1 (Tup2 e1 e2) = do
   (e1',t1) <- inferT1 e1
   (e2',t2) <- inferT1 e2
@@ -607,6 +609,7 @@ inferT2 (T.FromIntegral tr e) = do
     throwError ("result type of fromIntegral must be of class Num in expression " ++ (show (T.FromIntegral tr e)) ++ ". actual type: " ++ (show tr))
   return tr
 inferT2 (T.BoolLit b) = return tBool
+inferT2 (T.Unit) = return tUnit
 inferT2 (T.Tup2 e1 e2) = liftM2 TTup2 (inferT2 e1) (inferT2 e2)
 inferT2 (T.Fst e) = do
   t <- inferT2 e
