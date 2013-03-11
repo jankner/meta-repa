@@ -13,6 +13,7 @@ import Control.Arrow
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Identity
 
 data Expr =
   -- Int -> a
@@ -91,6 +92,33 @@ data Expr =
     deriving (Eq, Ord)
 
 
+fixTuples :: Expr -> Expr
+fixTuples = runIdentity . (exprTraverse0 f)
+  where
+    f k (Tup2 e1 e2) =
+      case (e1,e2) of
+        (Fst e1', Snd e2') | e1' == e2' -> f k e1'
+        _ -> do e1' <- f k e1
+                e2' <- f k e2
+                return (Tup2 e1' e2')
+    f k (TupN es) =
+      case tupleCheck es of
+        Just e' -> f k e'
+        Nothing -> liftM TupN $ mapM (f k) es
+    f k e | isAtomic e = return e
+          | otherwise  = k e
+
+data D = D Expr Int 
+
+tupleCheck :: [Expr] -> Maybe Expr 
+tupleCheck (GetN n i e : es) = tupleCheck' 1 e es
+  where
+    tupleCheck' i e [] = Just e
+    tupleCheck' i e ((GetN n i' e'):es)
+      | i == i' && e == e' = tupleCheck' (i+1) e es
+    tupleCheck' i e (_:es) = Nothing
+tupleCheck (e          : es) = Nothing
+
 exprFold :: ((Expr -> a) -> Expr -> a)
          -> (a -> a -> a)
          -> (a -> a -> a -> a)
@@ -136,6 +164,12 @@ exprRec f g2 g3 g4 e@(WhileM e1 e2 e3 e4) = g4 (exprFold f g2 g3 g4 e1) (exprFol
 exprRec f g2 g3 g4 e@(TupN es) = foldl1 g2 (map (exprFold f g2 g3 g4) es)
 
 
+exprTraverse0 :: Monad m
+              => ((Expr -> m Expr) -> Expr -> m Expr)
+              -> Expr
+              -> m Expr
+exprTraverse0 f = liftM fst . exprTraverse f' (const id)
+  where f' k = liftM (\x -> (x,())) . f (liftM fst . k)
 
 exprTraverse :: Monad m
              => ((Expr -> m (Expr,a)) -> Expr -> m (Expr,a))
