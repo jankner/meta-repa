@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -fth #-}
 {-# LANGUAGE MagicHash #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module FOASTyped where
 
 import FOASCommon
@@ -110,8 +111,171 @@ data Expr =
   
   -- Show a => a -> (IO ())
   | Print Expr
-    deriving (Eq, Ord)
 
+
+-- Alpha renaming
+
+type RenameEnv = IM.IntMap Int
+type RenameState = Int
+
+type Rename a = Reader (IM.IntMap Int, Int) a
+
+runRename m = runReader m (IM.empty, 0)
+
+canonicalAlphaRename :: Expr -> Expr
+canonicalAlphaRename e = e' --trace ("rena: " ++ (show e')) $ trace ("show: " ++ (show e)) e'
+  where e' = runRename $ exprTraverse0 rename e
+
+lookVar :: Int -> Rename (Maybe Int)
+lookVar v = reader (IM.lookup v . fst)
+
+nextVar :: Rename Int
+nextVar = reader snd
+
+addVar v m = do
+  v' <- nextVar
+  a <- local (\(env,next) -> (IM.insert v next env, next+1)) m
+  return (v',a)
+
+rename :: (Expr -> Rename Expr) -> Expr -> Rename Expr
+rename k (Var v) = do
+  mv <- lookVar v --reader (lookup v)
+  case mv of
+    Just v' -> return (Var v')
+    Nothing -> return (Var v)
+rename k (Let v e1 e2) = do
+  e1' <- rename k e1
+  (v',e2') <- addVar v (rename k e2)
+  return (Let v' e1' e2')
+rename k (Lambda v t e) = do
+  (v',e') <- addVar v (rename k e)
+  return (Lambda v' t e')
+rename k e | isAtomic e = return e
+           | otherwise  = k e
+
+-- Comparison
+
+
+instance Eq Expr where
+  e1 == e2 = canonicalAlphaRename e1 `eq` canonicalAlphaRename e2
+
+eq (Var v1)                (Var v2)                = v1 == v2
+eq (BinOp op1 a1 b1)       (BinOp op2 a2 b2)       = op1 == op2 && a1 `eq` a2 && b1 `eq` b2
+eq (Compare op1 a1 b1)     (Compare op2 a2 b2)     = op1 == op2 && a1 `eq` a2 && b1 `eq` b2
+eq (UnOp op1 a1)           (UnOp op2 a2)           = op1 == op2 && a1 `eq` a2
+eq (FromInteger t1 i1)     (FromInteger t2 i2)     = t1 == t2 && i1 == i2
+eq (FromRational t1 r1)    (FromRational t2 r2)    = t1 == t2 && r1 == r2
+eq (FromIntegral t1 a1)    (FromIntegral t2 a2)    = t1 == t2 && a1 `eq` a2
+eq (BoolLit b1)            (BoolLit b2)            = b1 == b2
+eq (Tup2 a1 b1)            (Tup2 a2 b2)            = a1 `eq` a2 && b1 `eq` b2
+eq (Fst a1)                (Fst a2)                = a1 `eq` a2
+eq (Snd a1)                (Snd a2)                = a1 `eq` a2
+eq (TupN as1)              (TupN as2)              = foldl1 (&&) (zipWith eq as1 as2)
+eq (GetN n1 i1 a1)         (GetN n2 i2 a2)         = n1 == n2 && i1 == i2 && a1 `eq` a2
+eq (Let v1 a1 b1)          (Let v2 a2 b2)          = v1 == v2 && a1 `eq` a2 && b1 `eq` b2 
+eq (App a1 b1)             (App a2 b2)             = a1 `eq` a2 && b1 `eq` b2 
+eq (Lambda v1 t1 a1)       (Lambda v2 t2 a2)       = v1 == v2 && t1 == t2 && a1 `eq` a2
+eq (Return a1)             (Return a2)             = a1 `eq` a2
+eq (Bind a1 b1)            (Bind a2 b2)            = a1 `eq` a2 && b1 `eq` b2
+eq (If a1 b1 c1)           (If a2 b2 c2)           = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (IterateWhile a1 b1 c1) (IterateWhile a2 b2 c2) = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (WhileM a1 b1 c1 d1)    (WhileM a2 b2 c2 d2)    = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2 && d1 `eq` d2
+eq (RunMutableArray a1)    (RunMutableArray a2)    = a1 `eq` a2
+eq (ReadIArray a1 b1)      (ReadIArray a2 b2)      = a1 `eq` a2 && b1 `eq` b2
+eq (ArrayLength a1)        (ArrayLength a2)        = a1 `eq` a2
+eq (NewArray t1 a1)        (NewArray t2 a2)        = t1 == t2 && a1 `eq` a2
+eq (ReadArray a1 b1)       (ReadArray a2 b2)       = a1 `eq` a2 && b1 `eq` b2
+eq (WriteArray a1 b1 c1)   (WriteArray a2 b2 c2)   = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (ParM a1 b1)            (ParM a2 b2)            = a1 `eq` a2 && b1 `eq` b2
+eq (Unit)                  (Unit)                  = True
+eq (Skip)                  (Skip)                  = True
+eq (Print a1)              (Print a2)              = a1 `eq` a2
+eq _                       _                       = False
+
+
+instance Ord Expr where
+  compare a b = cmp (canonicalAlphaRename a) (canonicalAlphaRename b)
+
+infix  4 `cmp`
+infixr 3 `lexi`
+
+lexi :: Ordering -> Ordering -> Ordering
+lexi EQ o2 = o2
+lexi o1 _  = o1
+
+cmpList :: [Expr] -> [Expr] -> Ordering
+cmpList []     []     = EQ
+cmpList []     (_:_)  = LT
+cmpList (_:_)  []     = GT
+cmpList (x:xs) (y:ys) =
+  case cmp x y of
+    EQ -> cmpList xs ys
+    o  -> o
+  
+cmp (Var v1)                (Var v2)                = compare v1 v2
+cmp (BinOp op1 a1 b1)       (BinOp op2 a2 b2)       = compare op1 op2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (Compare op1 a1 b1)     (Compare op2 a2 b2)     = compare op1 op2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (UnOp op1 a1)           (UnOp op2 a2)           = compare op1 op2 `lexi` a1 `cmp` a2
+cmp (FromInteger t1 i1)     (FromInteger t2 i2)     = compare t1 t2 `lexi` compare i1 i2
+cmp (FromRational t1 r1)    (FromRational t2 r2)    = compare t1 t2 `lexi` compare r1 r2
+cmp (FromIntegral t1 a1)    (FromIntegral t2 a2)    = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (BoolLit b1)            (BoolLit b2)            = compare b1 b2
+cmp (Tup2 a1 b1)            (Tup2 a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (Fst a1)                (Fst a2)                = a1 `cmp` a2
+cmp (Snd a1)                (Snd a2)                = a1 `cmp` a2
+cmp (TupN as1)              (TupN as2)              = cmpList as1 as2
+cmp (GetN n1 i1 a1)         (GetN n2 i2 a2)         = compare n1 n2 `lexi` compare i1 i2 `lexi` a1 `cmp` a2
+cmp (Let v1 a1 b1)          (Let v2 a2 b2)          = compare v1 v2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2 
+cmp (App a1 b1)             (App a2 b2)             = a1 `cmp` a2 `lexi` b1 `cmp` b2 
+cmp (Lambda v1 t1 a1)       (Lambda v2 t2 a2)       = compare v1 v2 `lexi` compare t1 t2 `lexi` a1 `cmp` a2
+cmp (Return a1)             (Return a2)             = a1 `cmp` a2
+cmp (Bind a1 b1)            (Bind a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (If a1 b1 c1)           (If a2 b2 c2)           = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (IterateWhile a1 b1 c1) (IterateWhile a2 b2 c2) = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (WhileM a1 b1 c1 d1)    (WhileM a2 b2 c2 d2)    = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2 `lexi` d1 `cmp` d2
+cmp (RunMutableArray a1)    (RunMutableArray a2)    = a1 `cmp` a2
+cmp (ReadIArray a1 b1)      (ReadIArray a2 b2)      = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (ArrayLength a1)        (ArrayLength a2)        = a1 `cmp` a2
+cmp (NewArray t1 a1)        (NewArray t2 a2)        = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (ReadArray a1 b1)       (ReadArray a2 b2)       = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (WriteArray a1 b1 c1)   (WriteArray a2 b2 c2)   = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (ParM a1 b1)            (ParM a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (Skip)                  (Skip)                  = EQ
+cmp (Print a1)              (Print a2)              = a1 `cmp` a2
+cmp e1 e2                                           = compare (exprOrd e1) (exprOrd e2)
+
+exprOrd :: Expr -> Int
+exprOrd (Var _)              = 1
+exprOrd (BinOp _ _ _)        = 2
+exprOrd (Compare _ _ _)      = 3
+exprOrd (UnOp _ _)           = 4
+exprOrd (FromInteger _ _)    = 5
+exprOrd (FromRational _ _)   = 6
+exprOrd (FromIntegral _ _)   = 7
+exprOrd (BoolLit _)          = 8
+exprOrd (Tup2 _ _)           = 9
+exprOrd (Fst _)              = 10
+exprOrd (Snd _)              = 11
+exprOrd (TupN _)             = 12
+exprOrd (GetN _ _ _)         = 13
+exprOrd (Let _ _ _)          = 14
+exprOrd (App _ _)            = 15
+exprOrd (Lambda _ _ _)       = 16
+exprOrd (Return _)           = 17
+exprOrd (Bind _ _)           = 18
+exprOrd (If _ _ _)           = 19
+exprOrd (IterateWhile _ _ _) = 20
+exprOrd (WhileM _ _ _ _)     = 21
+exprOrd (RunMutableArray _)  = 22
+exprOrd (ReadIArray _ _)     = 23
+exprOrd (ArrayLength _)      = 24
+exprOrd (NewArray _ _)       = 25
+exprOrd (ReadArray _ _)      = 26
+exprOrd (WriteArray _ _ _)   = 28
+exprOrd (ParM _ _)           = 29
+exprOrd (Unit)               = 30
+exprOrd (Skip)               = 31
+exprOrd (Print _)            = 32
 
 -- General traversal
 
