@@ -75,9 +75,10 @@ toFOAS' (HO.Lambda t f) = FO.Lambda v (translateType t) e
   where e = toFOAS' $ f (HO.Var v)
         v = getVar e
 
-toFOAS' (HO.Let a f) = FO.Let v (toFOAS' a) e
-  where e = toFOAS' $ f (HO.Var v)
-        v = getVar e
+toFOAS' (HO.Let a f) = FO.Let v e1 e2
+  where e1 = toFOAS' a
+        e2 = toFOAS' $ f (HO.Var v)
+        v = max (getVar e1) (getVar e2)
 
 toFOAS' (HO.Return a) = FO.Return (toFOAS' a)
 toFOAS' (HO.Bind a f) = FO.Bind (toFOAS' a) (toFOAS' f)
