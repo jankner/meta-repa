@@ -559,7 +559,7 @@ translate (IterateWhile e1 e2 e3) =
 translate (WhileM e1 e2 e3 e4) =
   [| whileM $(translate e1) $(translate e2) $(translate e3) $(translate e4) |]
 translate (RunMutableArray e) = [| runMutableArray $(translate e) |]
-translate (ReadIArray e1 e2) = [| $(translate e1) ! $(translate e2) |]
+translate (ReadIArray e1 e2) = [| $(translate e1) `unsafeAt` $(translate e2) |]
 translate (ArrayLength e) = [| snd (bounds $(translate e)) + 1 |]
 translate (NewArray t e) = sigE [| newIOUArray (0,$(translate e)-1) |] (translateType (TIO $ TMArr t))
 translate (WriteArray e1 e2 e3) = [| unsafeWrite $(translate e1) $(translate e2) $(translate e3) |]
