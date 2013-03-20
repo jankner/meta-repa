@@ -203,6 +203,18 @@ toList :: Shape sh -> [Expr Length]
 toList Z = []
 toList (sh :. i) = i : toList sh
 
+offset :: Shape sh -> Shape sh -> Shape sh
+offset Z Z = Z
+offset (sh1 :. n1) (sh2 :. n2) = offset sh1 sh2 :. (n1 + n2)
+
+mapShape :: (Expr Int -> Expr Int) -> Shape sh -> Shape sh
+mapShape f Z = Z
+mapShape f (sh :. n) = mapShape f sh :. f n
+
+zipShape :: (Expr Int -> Expr Int -> Expr Int) -> Shape sh -> Shape sh -> Shape sh
+zipShape f Z Z = Z
+zipShape f (sh1 :. n1) (sh2 :. n2) = zipShape f sh1 sh2 :. (n1 `f` n2)
+
 forShape :: Shape sh -> (Expr Int -> M ()) -> M ()
 forShape Z k = k 0
 forShape sh k = parM (size sh) k
