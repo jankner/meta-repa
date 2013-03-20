@@ -26,6 +26,7 @@ import Data.Ratio
 import Control.Arrow
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.Writer
 import Control.Monad.State
 
 import qualified Language.Haskell.TH as TH
@@ -359,6 +360,56 @@ isAtomic _ = False
 
 -- CSE
 
+type UndoEnv = (IM.IntMap Expr, Int)
+
+countVar :: Int -> Int -> Int
+countVar new cur | new < 0x40000000 = new
+                 | otherwise        = cur
+
+undoSome :: IM.IntMap (Int,Int) -> Expr -> Expr
+undoSome map e = runReader (exprTraverse0 (undoSome' map) e) (IM.empty, 0x3fffffff)
+
+undoSome' :: IM.IntMap (Int,Int)
+         -> (Expr -> Reader UndoEnv Expr)
+         -> Expr
+         -> Reader UndoEnv Expr
+undoSome' map k (Var v) =
+  reader $ \(emap,_) ->
+    case IM.lookup v emap of
+      Just e  -> e
+      Nothing -> Var v
+undoSome' map k (Lambda v t e) =
+  do e' <- local (second (countVar v)) $ undoSome' map k e
+     return (Lambda v t e')
+undoSome' map k (Let v e1 e2) =
+  local (second (countVar v)) $ 
+    do e1' <- undoSome' map k e1
+       b' <- reader snd
+       case IM.lookup v map of
+         Just (b,c) | b /= 0x3fffffff && c <= 1 && b == b' || not (worthIt 1 e1') ->
+           do e2' <- local (first $ IM.insert v e1') $ undoSome' map k e2
+              return e2'
+         _ -> 
+           do e2' <- undoSome' map k e2
+              return (Let v e1' e2')
+undoSome' map k e | isAtomic e = return e
+                  | otherwise  = k e
+
+worthIt :: Int -> Expr -> Bool
+worthIt i e | isAtomic e = False
+worthIt 0 e              = True
+worthIt i (Tup2 e1 e2)       = worthIt (i-1) e1 || worthIt (i-1) e2
+worthIt i (BinOp op e1 e2)   = worthIt (i-1) e1 || worthIt (i-1) e2
+worthIt i (Compare op e1 e2) = worthIt (i-1) e1 || worthIt (i-1) e2
+worthIt i (UnOp op e)        = worthIt (i-1) e
+worthIt i (FromIntegral t e) = worthIt (i-1) e
+worthIt i (Fst e)            = worthIt (i-1) e
+worthIt i (Snd e)            = worthIt (i-1) e
+worthIt i (Return e)         = worthIt (i-1) e
+worthIt i (NewArray t e)     = worthIt i e
+worthIt i e = True
+
+
 findMin :: IS.IntSet -> Maybe Int
 findMin s | IS.null s = Nothing
           | otherwise  = Just (IS.findMin s)
@@ -366,102 +417,110 @@ findMin s | IS.null s = Nothing
 minVar :: IS.IntSet -> Int
 minVar = (fromMaybe 0x3fffffff) .  findMin 
 
+type ExprInfo = (Int -- min (free vars in expression)
+                ,Int -- count
+                ,Int -- min (bound vars in expression scope)
+                )
 
-data CSEState = CSEState { exprMap :: IM.IntMap (M.Map Expr (Int, Int)), varCounter :: Int }
+data CSEState = CSEState { exprMap :: IM.IntMap (M.Map Expr ExprInfo), varCounter :: Int }
 
-type CSEM a = State CSEState a
+newtype CSEM a = CSEM { unCSEM :: StateT CSEState (ReaderT [Int] (Writer (IM.IntMap (Int,Int)))) a }
+  deriving (Monad, MonadReader [Int], MonadWriter (IM.IntMap (Int,Int)), MonadState CSEState)
+
+runCSE :: CSEM a -> (a, CSEState, IM.IntMap (Int,Int))
+runCSE m = (a, st, w)
+  where ((a, st), w) = runWriter (runReaderT (runStateT (unCSEM m) startState) [])
+        startState = CSEState {exprMap = IM.empty, varCounter = 0x40000000}
 
 cse :: Expr -> Expr
-cse e = evalState (stuff e) (CSEState {exprMap = IM.empty, varCounter = 0x40000000})
-  where stuff e = 
-          do (e',vs) <- exprTraverse thing IS.union e
-             st <- get
-             let exprs = exprSort $ exprMapToList (exprMap st)
-             let eFinal = foldl letBind e' exprs
-             return eFinal
-        exprSort = sortBy $ \(_,_,v1,_) (_,_,v2,_) -> compare v2 v1
+cse e = eFinal
+  where ((e',fvs), s, varMap) = runCSE (exprTraverse thing IS.union e)
+        e'' = letBindExprs (exprMap s) e'
+        varMap' = varMap `IM.union` (exprMapToVarMap (exprMap s))
+        eFinal = trace ("e'': " ++ (show e'')) $ undoSome varMap' e''
 
+addEnvVar :: Int -> CSEM a -> CSEM a
+addEnvVar v = local (v:)
+
+getEnvVar :: CSEM Int
+getEnvVar = reader r
+ where r []    = 0x3fffffff
+       r (x:_) = x
+
+writeExprs :: IM.IntMap (M.Map Expr ExprInfo) -> CSEM ()
+writeExprs exprMap = tell (exprMapToVarMap exprMap)
+
+exprMapToVarMap :: IM.IntMap (M.Map Expr ExprInfo) -> IM.IntMap (Int,Int)
+exprMapToVarMap exprMap = IM.fromList $ map (\(_,(_,(v,c,b))) -> (v,(b,c))) (exprMapToList exprMap)
 
 thing :: (Expr -> CSEM (Expr,IS.IntSet)) -> Expr -> CSEM (Expr,IS.IntSet)
-thing f (Var v) = return (Var v, IS.singleton v)
-thing f (Let v e1 e2) = do
-  (e2',vs2) <- thing f e2
+thing k (Var v) = return (Var v, IS.singleton v)
+thing k (Let v e1 e2) = do
+  (e2',vs2) <- addEnvVar v $ thing k e2
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
-  let e2Final = replaceExprs v exprs e2'
+  let e2Final = letBindExprs exprs e2'
   put (st {exprMap = newMap})
-  (e1',vs1) <- f e1
-  v1 <- addExpr e1' vs1
-  return (Let v (Var v1) e2Final, IS.difference (IS.union vs1 vs2) (IS.singleton v))
-thing f (Lambda v t e) = do
-  (e',vs) <- thing f e
+  b <- getEnvVar
+  writeExprs exprs
+  (e1',vs1) <- thing k e1
+  v1 <- addExpr e1' b vs1
+  let vs' = IS.difference (IS.union vs1 vs2) (IS.singleton v)
+  v' <- addExpr (Let v (Var v1) e2Final) b vs'
+  return (Var v', vs')
+thing k (Lambda v t e) = do
+  (e',vs) <- addEnvVar v $ thing k e
   st <- get
   let (exprs,newMap) = extractExprsLE (exprMap st) v
-  let eFinal = replaceExprs v exprs e'
+  let eFinal = letBindExprs exprs e'
   put (st {exprMap = newMap})
-  return (Lambda v t eFinal, IS.difference vs (IS.singleton v))
-thing f e | isAtomic e = return (e, IS.empty)
-thing f e | otherwise  = do
-  (e',vs) <- f e
-  v <- addExpr e' vs
+  b <- getEnvVar
+  writeExprs exprs
+  let vs' = IS.difference vs (IS.singleton v)
+  v' <- addExpr (Lambda v t eFinal) b vs'
+  return (Var v', vs')
+thing k e | isAtomic e = return (e, IS.empty)
+thing k e | otherwise  = do
+  (e',vs) <- k e
+  b <- getEnvVar
+  v <- addExpr e' b vs
   return (Var v, vs)
 
 
-exprMapToList :: IM.IntMap (M.Map Expr (Int,Int)) -> [(Int,Expr,Int,Int)]
+exprMapToList :: IM.IntMap (M.Map Expr ExprInfo) -> [(Int,(Expr,ExprInfo))]
 exprMapToList exprMap = concatMap (uncurry mapToList) $ IM.toAscList exprMap
 
-extractExprsLE :: IM.IntMap (M.Map Expr (Int,Int)) -> Int -> ([(Int,Expr,Int,Int)], IM.IntMap (M.Map Expr (Int,Int)))
-extractExprsLE exprMap v = (exprs,newMap)
-  where exprs = (concatMap (mapToList v) $ maybeToList x) ++ (concatMap (uncurry mapToList) $ IM.toAscList restMap) 
+extractExprsLE :: IM.IntMap (M.Map Expr ExprInfo) -> Int -> (IM.IntMap (M.Map Expr ExprInfo), IM.IntMap (M.Map Expr ExprInfo))
+extractExprsLE exprMap v = (lessEqExprs,newMap)
+  where lessEqExprs = maybe restMap (\x -> IM.insert v x restMap) x
         (restMap, x, newMap) = IM.splitLookup v exprMap
 
-mapToList :: Int -> M.Map Expr (Int,Int) -> [(Int,Expr,Int,Int)]
-mapToList i m = zipWith tupCons3 (repeat i) (map (uncurry tupCons2) (M.toList m))
-  where tupCons2 a (b,c) = (a,b,c)
-        tupCons3 a (b,c,d) = (a,b,c,d)
+mapToList :: Int -> M.Map Expr ExprInfo -> [(Int,(Expr,ExprInfo))]
+mapToList i m = zip (repeat i) (M.toList m)
 
-replaceExprs :: Int -> [(Int,Expr,Int,Int)] -> Expr -> Expr
-replaceExprs v es e = foldl letBind (substituteExprs subExprs e) letExprs'
-  where (letExprs, subExprs) = partition p es
-        letExprs' = sortBy (\(_,_,v1,_) (_,_,v2,_) -> compare v2 v1) letExprs
-        p (b,e,v',c) =  b < v || c > 1
+letBindExprs :: IM.IntMap (M.Map Expr ExprInfo) -> Expr -> Expr
+letBindExprs exprMap e = foldl letBind e letExprs
+  where letExprs = sortBy (\(_,(_,(v1,_,_))) (_,(_,(v2,_,_))) -> compare v2 v1) (exprMapToList exprMap)
 
-letBind :: Expr -> (Int,Expr,Int,Int) -> Expr
-letBind e (_,e',v,_) = Let v e' e
-
-substituteExprs :: [(Int,Expr,Int,Int)] -> Expr -> Expr
-substituteExprs xs e = subVar exprMap e
-  where exprMap = IM.fromList $ map f xs
-        f (_,e,v,_) = (v, subVar exprMap e)
-
-subVar :: IM.IntMap Expr -> Expr -> Expr
-subVar m e = fst $ runReader (exprTraverse subV (\a b -> ()) e) m
-
-subV :: (Expr -> Reader (IM.IntMap Expr) (Expr,())) -> Expr -> Reader (IM.IntMap Expr) (Expr,()) 
-subV f (Var v) = do
-  me <- reader (IM.lookup v)
-  case me of
-    Just e  -> return (e,())
-    Nothing -> return (Var v,())
-subV f e | isAtomic e = return (e,())
-         | otherwise  = f e
+letBind :: Expr -> (Int,(Expr,ExprInfo)) -> Expr
+letBind e (_,(e',(v,_,_))) = Let v e' e
 
 
 removeWithDefault :: Int -> a -> IM.IntMap a -> (a, IM.IntMap a)
 removeWithDefault k a map = (fromMaybe a old, map')
   where (old, map') = IM.updateLookupWithKey (\_ _ -> Nothing) k map
  
-addExpr :: Expr -> IS.IntSet -> CSEM Int
-addExpr e vs = do
+addExpr :: Expr -> Int -> IS.IntSet -> CSEM Int
+addExpr e b vs = do
   st <- get
   let l = minVar vs
   let map = exprMap st
   let subMap = IM.findWithDefault M.empty l map
-  let (x,newSubMap) = M.insertLookupWithKey (\key _ (oldv,oldc) -> (oldv,oldc+1)) e (varCounter st, 1) subMap
+  let (x,newSubMap) = M.insertLookupWithKey (\key _ (oldv,oldc,oldb) -> (oldv,oldc+1, min oldb b)) e (varCounter st, 1, b) subMap
   case x of
-    Just (v,_) -> do
+    Just (v,c,_) -> do
       put (st {exprMap = IM.insert l newSubMap map})
-      return v --trace ("l: " ++ (show l) ++ ", v: " ++ (showVar v) ++ ", c: " ++ (show $ snd (fromJust $ M.lookup e newSubMap)) ++ ", e: " ++ (show e)) $ 
+      return v --trace ("l: " ++ (show l) ++ ", v: " ++ (showVar v) ++ ", c: " ++ (show (c+1)) ++ "b: " ++ (show b ) ++ ", e: " ++ (show e)) $ 
     Nothing  -> do
       let v = varCounter st
       put (st {exprMap = IM.insert l newSubMap map, varCounter = v + 1})
