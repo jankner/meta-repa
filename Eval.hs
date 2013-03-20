@@ -1,6 +1,7 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Eval where
 
 import System.IO.Unsafe
@@ -14,18 +15,70 @@ import Data.Array.Unsafe
 import Data.Array.Repa.Index
 import Data.Array.Repa.Eval.Gang
 
+import Data.Int
+import Data.Word
+
 import GHC.Exts
 import Prelude		as P
 
+import Control.DeepSeq
+
+infixr 0 `maybeDeepSeq`
+
+class MaybeNF a where
+  maybeDeepSeq :: a -> b -> b
+
+instance MaybeNF (a -> b) where
+  maybeDeepSeq = seq
+
+instance MaybeNF (UArray Int a) where
+  maybeDeepSeq = seq
+
+instance MaybeNF (IOUArray Int a) where
+  maybeDeepSeq = seq
+
+instance MaybeNF (IO a) where
+  maybeDeepSeq = seq
+
+instance MaybeNF Bool where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF Int where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF Word where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF Int64 where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF Word64 where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF Float where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF Double where
+  maybeDeepSeq = deepseq
+
+instance MaybeNF () where
+  maybeDeepSeq = deepseq
+
+instance (MaybeNF a, MaybeNF b) => MaybeNF (a, b) where
+  maybeDeepSeq (a,b) x = a `maybeDeepSeq` b `maybeDeepSeq` x
+
+instance (MaybeNF a, MaybeNF b, MaybeNF c) => MaybeNF (a, b, c) where
+  maybeDeepSeq (a,b,c) x = a `maybeDeepSeq` b `maybeDeepSeq` c `maybeDeepSeq` x
+
 
 while cond step init = loop init
-  where loop !s | cond s = loop (step s)
-                | True   = s
+  where loop s | cond s = loop (step s)
+               | True   = s
 {-# INLINE [0] while #-}
 
 whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
 whileM cond step action init
-  = let loop s = if cond s 
+  = let loop !s = if cond s 
                  then action s >> loop (step s)
                  else P.return ()
     in loop init

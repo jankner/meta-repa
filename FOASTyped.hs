@@ -605,10 +605,10 @@ translate (GetN n i e) =
   do x <- newName "get"
      let pat = tupP $ (replicate i wildP) ++ [varP x] ++ (replicate (n-i-1) wildP)
      caseE (translate e) [match pat (normalB (varE x)) []]
-translate (App e1 e2) = [| $(translate e1) $(translate e2) |]
-translate (Let v e1 e2) = letE [valD (varP v') (normalB (translate e1)) []] (translate e2)
+translate (App e1 e2) = [| let a = $(translate e2) in a `maybeDeepSeq` $(translate e1) a |]
+translate (Let v e1 e2) = letE [valD (varP v') (normalB (translate e1)) []] [| $(varE v') `maybeDeepSeq` $(translate e2) |]
   where v' = mkName (showVar v)
-translate (Lambda v _ e1) = lam1E (varP v') (translate e1)
+translate (Lambda v _ e1) = lam1E (varP v') [| $(varE v') `maybeDeepSeq` $(translate e1) |]
   where v' = mkName (showVar v)
 translate (Return e) = [| return $(translate e) |]
 translate (Bind e1 e2) = [| $(translate e1) >>= $(translate e2) |]
