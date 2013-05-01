@@ -53,6 +53,7 @@ toFOAS' (HO.Recip a)  = FO.UnOp FO.Recip  (toFOAS' a)
 toFOAS' (HO.FromInteger  t i) = FO.FromInteger (translateTConst t) i
 toFOAS' (HO.FromRational t r) = FO.FromRational (translateTConst t) r
 toFOAS' (HO.FromIntegral t a) = FO.FromIntegral (translateType t) (toFOAS' a)
+toFOAS' (HO.BoolLit b) = FO.BoolLit b
 
 toFOAS' (HO.Equal    a b) = FO.Compare FO.EQU (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.NotEqual a b) = FO.Compare FO.NEQ (toFOAS' a) (toFOAS' b)
