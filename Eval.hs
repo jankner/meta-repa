@@ -23,13 +23,11 @@ import Prelude		as P
 
 import Control.DeepSeq
 
-infixr 0 `maybeDeepSeq`
-
-class MaybeNF a where
-  maybeDeepSeq :: a -> b -> b
+import MaybeNF
+import GenInstance
 
 instance MaybeNF (a -> b) where
-  maybeDeepSeq = seq
+  maybeDeepSeq = flip const
 
 instance MaybeNF (UArray Int a) where
   maybeDeepSeq = seq
@@ -38,38 +36,50 @@ instance MaybeNF (IOUArray Int a) where
   maybeDeepSeq = seq
 
 instance MaybeNF (IO a) where
-  maybeDeepSeq = seq
+  maybeDeepSeq = flip const --seq
 
 instance MaybeNF Bool where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF Int where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF Word where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF Int64 where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF Word64 where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF Float where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF Double where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
 instance MaybeNF () where
-  maybeDeepSeq = deepseq
+  maybeDeepSeq = seq
 
+deriveMaybeNFTups 36
+
+{-
 instance (MaybeNF a, MaybeNF b) => MaybeNF (a, b) where
   maybeDeepSeq (a,b) x = a `maybeDeepSeq` b `maybeDeepSeq` x
 
 instance (MaybeNF a, MaybeNF b, MaybeNF c) => MaybeNF (a, b, c) where
   maybeDeepSeq (a,b,c) x = a `maybeDeepSeq` b `maybeDeepSeq` c `maybeDeepSeq` x
 
+instance (MaybeNF a, MaybeNF b, MaybeNF c,
+          MaybeNF d, MaybeNF e, MaybeNF f,
+          MaybeNF g, MaybeNF h, MaybeNF i) =>
+    MaybeNF (a, b, c, d, e, f, g, h, i) where
+ maybeDeepSeq (a, b, c, d, e, f, g, h, i) x =
+  a `maybeDeepSeq` b `maybeDeepSeq` c `maybeDeepSeq`
+  d `maybeDeepSeq` e `maybeDeepSeq` f `maybeDeepSeq`
+  g `maybeDeepSeq` h `maybeDeepSeq` i `maybeDeepSeq` x
+-}
 
 while cond step init = loop init
   where loop s | cond s = loop (step s)
@@ -78,9 +88,8 @@ while cond step init = loop init
 
 whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
 whileM cond step action init
-  = let loop !s = if cond s 
-                 then action s >> loop (step s)
-                 else P.return ()
+  = let loop !s | cond s = action s >> loop (step s)
+                | True   = P.return ()
     in loop init
 {-# INLINE [0] whileM #-}
 
