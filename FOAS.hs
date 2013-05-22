@@ -68,6 +68,8 @@ data Expr =
   -- Bool -> a -> a -> a
   | If Expr Expr Expr
   
+  -- ((a -> r) -> a -> r) -> a -> r
+  | Rec Expr Expr
   -- (s -> Bool) -> (s -> s) -> s -> s
   | IterateWhile Expr Expr Expr
   -- (s -> Bool) -> (s -> s) -> (s -> IO ()) -> s -> (IO ())
@@ -149,6 +151,7 @@ exprRec f g2 g3 g4 e@(Print e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(GetN l n e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Lambda v t e1) = exprFold f g2 g3 g4 e1
 
+exprRec f g2 g3 g4 e@(Rec e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(App e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(BinOp op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Compare op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
@@ -199,6 +202,7 @@ exprTrav f g e@(ArrayLength e1) = liftM (ArrayLength *** id) (exprTraverse f g e
 exprTrav f g e@(Print e1) = liftM (Print *** id) (exprTraverse f g e1)
 exprTrav f g e@(GetN l n e1) = liftM ((GetN l n) *** id) (exprTraverse f g e1)
 
+exprTrav f g e@(Rec e1 e2) = liftM2 (Rec **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(App e1 e2) = liftM2 (App **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(BinOp op e1 e2) = liftM2 ((BinOp op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Compare op e1 e2) = liftM2 ((Compare op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)

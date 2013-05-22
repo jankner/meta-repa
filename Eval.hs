@@ -86,6 +86,11 @@ while cond step init = loop init
                | True   = s
 {-# INLINE [0] while #-}
 
+rec :: ((a -> r) -> a -> r) -> a -> r
+rec f x = let recf x = f recf x
+          in recf x
+{-# INLINE rec #-}
+
 whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
 whileM cond step action init
   = let loop !s | cond s = action s >> loop (step s)

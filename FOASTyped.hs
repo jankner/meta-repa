@@ -89,6 +89,8 @@ data Expr =
   -- Bool -> a -> a -> a
   | If Expr Expr Expr
   
+  -- ((a -> r) -> a -> r) -> a -> r
+  | Rec Expr Expr
   -- (s -> Bool) -> (s -> s) -> s -> s
   | IterateWhile Expr Expr Expr
   -- (s -> Bool) -> (s -> s) -> (s -> IO ()) -> s -> (IO ())
@@ -181,6 +183,7 @@ eq (Lambda v1 t1 a1)       (Lambda v2 t2 a2)       = v1 == v2 && t1 == t2 && a1 
 eq (Return a1)             (Return a2)             = a1 `eq` a2
 eq (Bind a1 b1)            (Bind a2 b2)            = a1 `eq` a2 && b1 `eq` b2
 eq (If a1 b1 c1)           (If a2 b2 c2)           = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (Rec a1 b1)             (Rec a2 b2)             = a1 `eq` a2 && b1 `eq` b2 
 eq (IterateWhile a1 b1 c1) (IterateWhile a2 b2 c2) = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
 eq (WhileM a1 b1 c1 d1)    (WhileM a2 b2 c2 d2)    = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2 && d1 `eq` d2
 eq (RunMutableArray a1)    (RunMutableArray a2)    = a1 `eq` a2
@@ -234,6 +237,7 @@ cmp (Lambda v1 t1 a1)       (Lambda v2 t2 a2)       = compare v1 v2 `lexi` compa
 cmp (Return a1)             (Return a2)             = a1 `cmp` a2
 cmp (Bind a1 b1)            (Bind a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
 cmp (If a1 b1 c1)           (If a2 b2 c2)           = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (Rec a1 b1)             (Rec a2 b2)             = a1 `cmp` a2 `lexi` b1 `cmp` b2
 cmp (IterateWhile a1 b1 c1) (IterateWhile a2 b2 c2) = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
 cmp (WhileM a1 b1 c1 d1)    (WhileM a2 b2 c2 d2)    = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2 `lexi` d1 `cmp` d2
 cmp (RunMutableArray a1)    (RunMutableArray a2)    = a1 `cmp` a2
@@ -279,6 +283,7 @@ exprOrd (ParM _ _)           = 29
 exprOrd (Unit)               = 30
 exprOrd (Skip)               = 31
 exprOrd (Print _)            = 32
+exprOrd (Rec _ _)            = 33
 
 -- General traversal
 
@@ -313,6 +318,7 @@ exprTrav f g e@(ArrayLength e1) = liftM (ArrayLength *** id) (exprTraverse f g e
 exprTrav f g e@(Print e1) = liftM (Print *** id) (exprTraverse f g e1)
 exprTrav f g e@(GetN l n e1) = liftM ((GetN l n) *** id) (exprTraverse f g e1)
 
+exprTrav f g e@(Rec e1 e2) = liftM2 (Rec **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(App e1 e2) = liftM2 (App **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(BinOp op e1 e2) = liftM2 ((BinOp op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Compare op e1 e2) = liftM2 ((Compare op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
@@ -557,6 +563,7 @@ showExpr d (GetN l n a) = showApp d ("get" ++ (show l) ++ "_" ++ (show n)) [a]
 showExpr d (Return a) = showApp d "return" [a]
 showExpr d (Bind m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
 showExpr d (If cond a b) = showParen (d > 0) $ showString "if " . showsPrec 0 cond . showString " then " . showsPrec 0 a . showString " else " . showsPrec 0 b
+showExpr d (Rec f a) = showApp d "rec" [f,a]
 showExpr d (IterateWhile cond step init) = showApp d "iterateWhile" [cond,step,init]
 showExpr d (WhileM cond step action init) = showApp d "whileM" [cond,step,action,init]
 showExpr d (RunMutableArray arr) = showApp d "runMutableArray" [arr]

@@ -252,6 +252,7 @@ data Expr a where
 
   If :: Expr Bool -> Expr a -> Expr a -> Expr a
 
+  Rec :: Expr ((a -> r) -> a -> r) -> Expr a -> Expr r
   IterateWhile :: Expr (s -> Bool) -> Expr (s -> s) -> Expr s -> Expr s
   WhileM :: Expr (s -> Bool) -> Expr (s -> s) -> Expr (s -> IO ()) -> Expr s -> Expr (IO ())
 
@@ -359,6 +360,9 @@ runMutableArray m = RunMutableArray (runM m)
 
 let_ :: (Computable a, Computable b) => a -> (a -> b) -> b
 let_ a f = externalize (Let (internalize a) (internalize . f . externalize))
+
+rec :: (Computable a, Computable r) => ((a -> r) -> a -> r) -> a -> r
+rec f a = externalize (Rec (lowerFun2 f) (internalize a))
 
 
 -- Eval

@@ -86,6 +86,8 @@ toFOAS' (HO.Bind a f) = FO.Bind (toFOAS' a) (toFOAS' f)
 
 toFOAS' (HO.If cond th el) = FO.If (toFOAS' cond) (toFOAS' th) (toFOAS' el)
 
+toFOAS' (HO.Rec f a) = FO.Rec (toFOAS' f) (toFOAS' a)
+
 toFOAS' (HO.IterateWhile cond step init) =
   FO.IterateWhile
     (toFOAS' cond)
