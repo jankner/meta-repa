@@ -259,7 +259,7 @@ data Expr a where
   ReadIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
   ArrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
 
-  NewArray   :: Storable a => Expr Int -> Expr (IO (IOUArray Int a))
+  NewArray   :: Storable a => Type a -> Expr Int -> Expr (IO (IOUArray Int a))
   ReadArray  :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
   WriteArray :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
   ParM       :: Expr Int -> Expr (Int -> IO ()) -> Expr (IO ())

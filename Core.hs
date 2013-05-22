@@ -102,7 +102,7 @@ toFOAS' (HO.RunMutableArray a) = FO.RunMutableArray (toFOAS' a)
 toFOAS' (HO.ReadIArray a b) = FO.ReadIArray (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.ArrayLength a) = FO.ArrayLength (toFOAS' a)
 
-toFOAS' (HO.NewArray a) = FO.NewArray (toFOAS' a)
+toFOAS' (HO.NewArray _ a) = FO.NewArray (toFOAS' a)
 toFOAS' (HO.ReadArray a b) = FO.ReadArray  (toFOAS' a) (toFOAS' b)
 toFOAS' (HO.WriteArray a b c) = FO.WriteArray (toFOAS' a) (toFOAS' b) (toFOAS' c)
 
