@@ -340,7 +340,7 @@ runM :: Typeable a => M (Expr a) -> Expr (IO a)
 runM (M f) = f Return
 
 newArrayE :: (Storable a) => Expr Int -> M (Expr (IOUArray Int a))
-newArrayE i = M (\k -> NewArray i `Bind` internalize k)
+newArrayE i = M (\k -> NewArray typeOf0 i `Bind` internalize k)
 
 parM :: Expr Int -> (Expr Int -> M ()) -> M ()
 parM l body = M (\k -> ParM l (internalize (\i -> unM (body i) (\() -> Skip)))
@@ -468,7 +468,7 @@ showExpr i (Bind m f)      = "(" ++ (showExpr i m) ++ " >>= " ++ (showExpr i f) 
 showExpr i (RunMutableArray arr) = "(runMutableArray " ++ (showExpr i arr) ++ ")"
 showExpr i (ReadIArray arr ix)   = "(readIArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ ")"
 showExpr i (ArrayLength arr)     = "(arrayLength " ++ (showExpr i arr) ++ ")"
-showExpr i (NewArray l)          = "(newArray " ++ (showExpr i l) ++ ")"
+showExpr i (NewArray t l)          = "(newArray " ++ (showExpr i l) ++ ")"
 showExpr i (ReadArray arr ix)    = "(readArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ ")"
 showExpr i (WriteArray arr ix a) = "(writeArray " ++ (showExpr i arr) ++ " " ++ (showExpr i ix) ++ " " ++ (showExpr i a) ++ ")"
 showExpr i (ParM n f) = "(parM " ++ (showExpr i n) ++ " " ++ (showExpr i f) ++ ")"
