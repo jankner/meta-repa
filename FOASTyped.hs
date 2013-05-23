@@ -6,6 +6,7 @@ module FOASTyped where
 import FOASCommon
 import Types
 import Eval
+import MaybeNF
 
 import Data.Array.Base
 import Data.Array.IO hiding (unsafeFreeze)
@@ -286,6 +287,51 @@ exprOrd (Print _)            = 32
 exprOrd (Rec _ _)            = 33
 
 -- General traversal
+
+exprFold :: ((Expr -> a) -> Expr -> a)
+         -> (a -> a -> a)
+         -> (a -> a -> a -> a)
+         -> (a -> a -> a -> a -> a)
+         -> Expr
+         -> a
+exprFold f g2 g3 g4 e = f (exprRec f g2 g3 g4) e
+
+exprRec :: ((Expr -> a) -> Expr -> a)
+        -> (a -> a -> a)
+        -> (a -> a -> a -> a)
+        -> (a -> a -> a -> a -> a)
+        -> Expr
+        -> a
+exprRec f g2 g3 g4 e@(FromIntegral t e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(UnOp op e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Fst e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Snd e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Return e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(NewArray _ e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(RunMutableArray e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(ArrayLength e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Print e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(GetN l n e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Lambda v t e1) = exprFold f g2 g3 g4 e1
+
+exprRec f g2 g3 g4 e@(Rec e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(App e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(BinOp op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Compare op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Tup2 e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Let v e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Bind e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(ReadIArray e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(ReadArray e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(ParM e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+
+exprRec f g2 g3 g4 e@(If e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
+exprRec f g2 g3 g4 e@(IterateWhile e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
+exprRec f g2 g3 g4 e@(WriteArray e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
+
+exprRec f g2 g3 g4 e@(WhileM e1 e2 e3 e4) = g4 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3) (exprFold f g2 g3 g4 e4)
+
+exprRec f g2 g3 g4 e@(TupN es) = foldl1 g2 (map (exprFold f g2 g3 g4) es)
 
 exprTraverse0 :: Monad m
               => ((Expr -> m Expr) -> Expr -> m Expr)

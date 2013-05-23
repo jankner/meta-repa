@@ -3,6 +3,7 @@ module Core where
 
 import FOAS (reducel3,reducel4,isAtomic)
 import qualified FOAS as FO
+import qualified FOASTyped as FOT
 import qualified HOAS as HO
 import qualified FOASCommon as FO
 import Types
@@ -111,6 +112,96 @@ toFOAS' (HO.WriteArray a b c) = FO.WriteArray (toFOAS' a) (toFOAS' b) (toFOAS' c
 toFOAS' (HO.ParM n f) = FO.ParM (toFOAS' n) (toFOAS' f)
 toFOAS' (HO.Skip) = FO.Skip
 toFOAS' (HO.Print a) = FO.Print (toFOAS' a)
+
+
+toFOAST :: HO.Expr a -> FOT.Expr
+toFOAST (HO.Binop op a b) =
+  case op of
+    HO.Plus  -> FOT.BinOp FO.Plus  (toFOAST a) (toFOAST b)
+    HO.Minus -> FOT.BinOp FO.Minus (toFOAST a) (toFOAST b)
+    HO.Mult  -> FOT.BinOp FO.Mult  (toFOAST a) (toFOAST b)
+    HO.Quot  -> FOT.BinOp FO.Quot  (toFOAST a) (toFOAST b)
+    HO.Rem   -> FOT.BinOp FO.Rem   (toFOAST a) (toFOAST b)
+    HO.Div   -> FOT.BinOp FO.Div   (toFOAST a) (toFOAST b)
+    HO.Mod   -> FOT.BinOp FO.Mod   (toFOAST a) (toFOAST b)
+    HO.FDiv  -> FOT.BinOp FO.FDiv  (toFOAST a) (toFOAST b)
+    HO.And   -> FOT.BinOp FO.And   (toFOAST a) (toFOAST b)
+    HO.Or    -> FOT.BinOp FO.Or    (toFOAST a) (toFOAST b)
+    HO.Min   -> FOT.BinOp FO.Min   (toFOAST a) (toFOAST b)
+    HO.Max   -> FOT.BinOp FO.Max   (toFOAST a) (toFOAST b)
+toFOAST (HO.Abs a)    = FOT.UnOp FO.Abs    (toFOAST a)
+toFOAST (HO.Signum a) = FOT.UnOp FO.Signum (toFOAST a)
+toFOAST (HO.Recip a)  = FOT.UnOp FO.Recip  (toFOAST a)
+toFOAST (HO.FromInteger  t i) = FOT.FromInteger (translateTConst t) i
+toFOAST (HO.FromRational t r) = FOT.FromRational (translateTConst t) r
+toFOAST (HO.FromIntegral t a) = FOT.FromIntegral (translateType t) (toFOAST a)
+toFOAST (HO.BoolLit b) = FOT.BoolLit b
+
+toFOAST (HO.Equal    a b) = FOT.Compare FO.EQU (toFOAST a) (toFOAST b)
+toFOAST (HO.NotEqual a b) = FOT.Compare FO.NEQ (toFOAST a) (toFOAST b)
+toFOAST (HO.GTH      a b) = FOT.Compare FO.GTH (toFOAST a) (toFOAST b)
+toFOAST (HO.LTH      a b) = FOT.Compare FO.LTH (toFOAST a) (toFOAST b)
+toFOAST (HO.GTE      a b) = FOT.Compare FO.GEQ (toFOAST a) (toFOAST b)
+toFOAST (HO.LTE      a b) = FOT.Compare FO.LEQ (toFOAST a) (toFOAST b)
+
+toFOAST (HO.Unit) = FOT.Unit
+
+toFOAST (HO.Tup2 a b) = FOT.Tup2 (toFOAST a) (toFOAST b)
+toFOAST (HO.Fst a) = FOT.Fst (toFOAST a)
+toFOAST (HO.Snd a) = FOT.Snd (toFOAST a)
+
+toFOAST (HO.TupN t) = FOT.TupN (HO.tupMap toFOAST t)
+toFOAST (HO.GetN l n a) = FOT.GetN l (HO.natToInt n) (toFOAST a)
+
+toFOAST (HO.App f a) = FOT.App (toFOAST f) (toFOAST a)
+toFOAST (HO.Lambda t f) = FOT.Lambda v (translateType t) e
+  where e = toFOAST $ f (HO.Var v)
+        v = getVarT e
+
+toFOAST (HO.Let a f) = FOT.Let v e1 e2
+  where e1 = toFOAST a
+        e2 = toFOAST $ f (HO.Var v)
+        v = max (getVarT e1) (getVarT e2)
+
+toFOAST (HO.Return a) = FOT.Return (toFOAST a)
+toFOAST (HO.Bind a f) = FOT.Bind (toFOAST a) (toFOAST f)
+
+toFOAST (HO.If cond th el) = FOT.If (toFOAST cond) (toFOAST th) (toFOAST el)
+
+toFOAST (HO.Rec f a) = FOT.Rec (toFOAST f) (toFOAST a)
+
+toFOAST (HO.IterateWhile cond step init) =
+  FOT.IterateWhile
+    (toFOAST cond)
+    (toFOAST step)
+    (toFOAST init)
+toFOAST (HO.WhileM cond step action init) =
+  FOT.WhileM
+    (toFOAST cond)
+    (toFOAST step)
+    (toFOAST action)
+    (toFOAST init)
+
+toFOAST (HO.RunMutableArray a) = FOT.RunMutableArray (toFOAST a)
+toFOAST (HO.ReadIArray a b) = FOT.ReadIArray (toFOAST a) (toFOAST b)
+toFOAST (HO.ArrayLength a) = FOT.ArrayLength (toFOAST a)
+
+toFOAST (HO.NewArray t a) = FOT.NewArray (translateType t) (toFOAST a)
+toFOAST (HO.ReadArray a b) = FOT.ReadArray  (toFOAST a) (toFOAST b)
+toFOAST (HO.WriteArray a b c) = FOT.WriteArray (toFOAST a) (toFOAST b) (toFOAST c)
+
+toFOAST (HO.ParM n f) = FOT.ParM (toFOAST n) (toFOAST f)
+toFOAST (HO.Skip) = FOT.Skip
+toFOAST (HO.Print a) = FOT.Print (toFOAST a)
+
+getVarT :: FOT.Expr -> Int
+getVarT = FOT.exprFold getVarT' max max3 max4
+
+getVarT' :: (FOT.Expr -> Int) -> FOT.Expr -> Int
+getVarT' f (FOT.Lambda i _ _) = i+1
+getVarT' f (FOT.Let i _ _) = i+1
+getVarT' f e | FOT.isAtomic e = 0
+             | otherwise      = f e
 
 
 getVar :: FO.Expr -> Int
