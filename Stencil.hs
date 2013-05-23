@@ -1,14 +1,18 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Stencil where
 
 import qualified Prelude as P
-import Prelude ((.),($),Num(..),Int,Bool,const,map,)
+import Prelude ((.),($),Num(..),Maybe(..),otherwise,undefined,Int,Bool(..),const,map)
 
-import Frontend
+import Frontend as F
 import Core
-import HOAS
+import HOAS as H hiding (Z)
 
 infixl 7 *>
 infixl 6 +^
@@ -104,3 +108,75 @@ forRegion sh1 sh2 k =
 iterateM :: Expr Int -> (Expr Int -> M ()) -> M ()
 iterateM n action = whileE (\i -> i > n) (+1) action 0
 
+
+
+class Tup t => UTup t a | t -> a where
+  tupMap2 :: (m a -> n a) -> t m -> t n 
+  tupZip :: (m1 a -> m2 a -> m3 a) -> t m1 -> t m2 -> t m3
+  tupMap3 :: (m a -> n a) -> t m -> [n a]
+
+instance UTup (Ein a) a where
+  tupMap2 f (Ein a) = Ein (f a)
+  tupZip f (Ein a) (Ein b) = Ein (a `f` b)
+  tupMap3 f (Ein a) = [f a]
+
+instance UTup as a => UTup (Cons a as) a where
+  tupMap2 f (a ::. as) = f a ::. tupMap2 f as
+  tupZip f (a ::. as) (b ::. bs) = a `f` b ::. tupZip f as bs
+  tupMap3 f (a ::. as) = f a : tupMap3 f as
+
+data Thing a = Thing (Int,Int) (Expr a)
+
+newtype GetFun t a = GetFun { unGetFun :: Expr (t Id) -> Expr a }
+
+data GetThing t a = GetThing (Int,Int) (Expr (t Id) -> Expr a)
+
+makeStencil2 :: (Num a, Storable a, UTup t a, TupTypeable t) => Int -> Int -> t Thing -> t (GetFun t) -> Stencil DIM2 (Expr a) (Expr a)
+makeStencil2 sizeX sizeY t gt =
+  Stencil 
+    { defaultValue = fromInteger 0
+    , stencilSize = F.Z :. numLit sizeY :. numLit sizeX
+    , sizeF = P.id
+    , init = initF t
+    , step = stepF t gt (1,0)
+    , write = writeF t gt
+    }
+
+numLit :: (P.Integral a, Storable a) => a -> Expr a
+numLit = fromInteger . P.toInteger
+
+toShapeDim2 :: (Int,Int) -> Shape DIM2
+toShapeDim2 (x,y) = F.Z :. numLit y :. numLit x
+
+initF :: (UTup t a, Storable a, Num a) => t Thing -> (Shape DIM2 -> Expr a) -> Expr (t Id)
+initF t f = TupN (tupMap2 g t)
+  where g (Thing p a) = f (toShapeDim2 p)
+
+stepF :: (UTup t a, Storable a, Num a) => t Thing -> t (GetFun t) -> (Int,Int) -> (Shape DIM2 -> Expr a) -> Expr (t Id) -> Expr (t Id)
+stepF t gt (sx,sy) f s = TupN $ tupMap2 chooseExpr t
+  where shifted = tupMap3 P.id $ tupZip (\(Thing (x,y) e) (GetFun f) -> GetThing (x - sx,y - sy) f) t gt
+        lookup p [] = Nothing
+        lookup p (GetThing p' g : ts) | p P.== p' = Just g
+                                      | otherwise = lookup p ts
+        chooseExpr (Thing p a) =
+          case lookup p shifted of
+            Just get -> get s
+            Nothing  -> f (toShapeDim2 p)
+
+writeF :: (UTup t a, Storable a, Num a) => t Thing -> t (GetFun t) -> Expr (t Id) -> Shape DIM2 -> (Shape DIM2 -> (Expr a) -> M ()) -> M ()
+writeF t gt s sh w = w sh (P.foldl1 (+) exprs)
+  where exprs = tupMap3 P.id x
+        x = tupZip (\(Thing p a) (GetFun get) -> get s * a) t gt
+
+data ThingE t a = ThingE (Int,Int) (t Expr -> Expr a)
+
+makeStencil2E :: (Num a, Storable a, UTup t a, TupTypeable t) => Int -> Int -> Int -> Int -> t (ThingE t) -> t (GetFun t) -> Stencil DIM2 (Expr a) (Expr a)
+makeStencil2E inSizeX inSizeY outSizeX outSizeY t gt =
+  Stencil
+    { defaultValue = fromInteger 0
+    , stencilSize = F.Z :. numLit inSizeY :. numLit inSizeX
+    , sizeF = undefined
+    , init = \ixf -> ixf (Z :. 0 :. 0)
+    , step = undefined
+    , write = undefined
+    }

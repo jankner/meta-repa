@@ -124,9 +124,9 @@ instance (Typeable a, Typeable b) => Typeable (a,b) where
   typeOf _ = TTup2 (typeOf0 :: Type a) (typeOf0 :: Type b)
   typeOf0  = TTup2 (typeOf0 :: Type a) (typeOf0 :: Type b)
 
-instance (Typeable a, Typeable b, Typeable c) => Typeable (Cons a (Cons b (Ein c)) Id) where
-  typeOf _ = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
-  typeOf0  = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
+--instance (Typeable a, Typeable b, Typeable c) => Typeable (Cons a (Cons b (Ein c)) Id) where
+--  typeOf _ = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
+--  typeOf0  = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
 
 instance Typeable a => Typeable (IOUArray Int a) where
   typeOf _ = TMArr typeOf0
@@ -143,6 +143,10 @@ instance (Typeable a, Typeable b) => Typeable (a -> b) where
 instance Typeable a => Typeable (IO a) where
   typeOf _ = TIO typeOf0
   typeOf0  = TIO typeOf0
+
+instance TupTypeable t => Typeable (t Id) where
+  typeOf t = TTupN (tupTypes t)
+  typeOf0 = TTupN (tupTypes tupFake)
 
 data Z = Z
 data S n = S n
@@ -178,17 +182,20 @@ data Cons a as m = (m a) ::. (as m)
 class Tup (t :: (* -> *) -> *) where
   tupLen :: t m -> Int
   tupMap :: (forall a. m a -> b) -> t m -> [b]
+  tupMap4 :: (forall a. m a -> n a) -> t m -> t n
   tupFake :: t m
 
 instance Tup (Ein a) where
   tupLen _ = 1
   tupMap f (Ein a) = [f a]
-  tupFake = Ein undefined
+  tupMap4 f (Ein a) = Ein (f a)
+  tupFake = Ein (error "inspecting dummy tuple")
 
 instance Tup as => Tup (Cons a as) where
   tupLen (a ::. as) = 1 + tupLen as
   tupMap f (a ::. as) = f a : (tupMap f as)
-  tupFake = undefined ::. tupFake
+  tupMap4 f (a ::. as) = f a ::. tupMap4 f as
+  tupFake = (error "inpsecting dummy tuple") ::. tupFake
 
 tupTail :: Tup as => (Cons a as m) -> as m
 tupTail (a ::. as) = as
@@ -205,6 +212,15 @@ instance Tup as => Get Z (Cons a as) m a where
 instance Get n as m b => Get (S n) (Cons a as) m b where
   tupGet (S n) (a ::. as) = tupGet n as
 
+
+class Tup t => TupTypeable t where
+  tupTypes :: t m -> t Type
+
+instance Typeable a => TupTypeable (Ein a) where
+  tupTypes (Ein _) = Ein typeOf0
+
+instance (Typeable a, TupTypeable as) => TupTypeable (Cons a as) where
+  tupTypes (a ::. as) = typeOf0 ::. tupTypes as
 
 
 instance Show (Expr a) where
