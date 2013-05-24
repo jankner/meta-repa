@@ -19,6 +19,7 @@ import Data.Int
 import Data.Word
 import Data.List
 import Data.Maybe
+import Data.Bits (Bits)
 
 import Control.Arrow
 import Control.Monad
@@ -241,6 +242,11 @@ data Expr a where
   FromInteger :: Num a => TypeConst a -> Integer -> Expr a
   FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
   FromIntegral :: (Integral a, Num b) => Type b -> Expr a -> Expr b
+  Complement :: Bits a => Expr a -> Expr a
+  Bit :: Bits a => Expr Int -> Expr a
+  Rotate :: Bits a => Expr a -> Expr Int -> Expr a
+  ShiftL :: Bits a => Expr a -> Expr Int -> Expr a
+  ShiftR :: Bits a => Expr a -> Expr Int -> Expr a
 
   BoolLit :: Bool -> Expr Bool
 
@@ -298,6 +304,9 @@ data Binop a where
   FDiv  :: Fractional a => Binop a
   And   :: Binop Bool
   Or    :: Binop Bool
+  Xor   :: Bits a => Binop a
+  BAnd  :: Bits a => Binop a
+  BOr   :: Bits a => Binop a
 
 deriving instance Eq (Binop a)
 
@@ -321,6 +330,17 @@ instance (Storable a, Fractional a) => Fractional (Expr a) where
   (/) = Binop FDiv
   recip = Recip
   fromRational = FromRational typeConstOf0
+
+--instance Bits a => Bits (Expr a) where
+a .&. b = Binop BAnd a b
+a .|. b = Binop BOr a b
+xor a b = Binop Xor a b
+a ⊕ b   = Binop Xor a b
+complement a = Complement a
+bit i = Bit i  
+rotate a i = Rotate a i
+a .<<. i = ShiftL a i
+a .>>. i = ShiftR a i
 
 getN :: Get n t Expr b => n -> Expr (t Id) -> Expr b
 getN n et = GetN (tupLen (fake et)) n et

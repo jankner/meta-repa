@@ -14,6 +14,7 @@ import Data.Array.MArray hiding (unsafeFreeze)
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Array.Unsafe
+import Data.Bits
 
 import Data.Int
 import Data.Word
@@ -489,7 +490,7 @@ cse e = eFinal
   where ((e',fvs), s, varMap) = runCSE (exprTraverse thing IS.union e)
         e'' = letBindExprs (exprMap s) e'
         varMap' = varMap `IM.union` (exprMapToVarMap (exprMap s))
-        eFinal = trace ("e'': " ++ (show e'')) $ undoSome varMap' e''
+        eFinal = {- trace ("e'': " ++ (show e'')) $-} undoSome varMap' e''
 
 addEnvVar :: Int -> CSEM a -> CSEM a
 addEnvVar v = local (v:)
@@ -707,6 +708,9 @@ translateBinOp Min   q1 q2 = [| min $(q1) $(q2) |]
 translateBinOp Max   q1 q2 = [| max $(q1) $(q2) |]
 translateBinOp And   q1 q2 = [| $(q1) && $(q2) |]
 translateBinOp Or    q1 q2 = [| $(q1) || $(q2) |]
+translateBinOp Xor   q1 q2 = [| $(q1) `xor` $(q2) |]
+translateBinOp BAnd  q1 q2 = [| $(q1) .&. $(q2) |]
+translateBinOp BOr   q1 q2 = [| $(q1) .|. $(q2) |]
 
 translateCompOp :: CompOp -> Q Exp -> Q Exp -> Q Exp
 translateCompOp EQU q1 q2 = [| $(q1) == $(q2) |]

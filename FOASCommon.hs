@@ -13,6 +13,9 @@ data BinOp = Plus  -- Num a => P a
            | Max -- Ord a => P a
            | And -- P Bool
            | Or  -- P Bool
+           | Xor -- Bits a => P a
+           | BAnd -- Bits a => P a
+           | BOr -- Bits a => P a
   deriving (Show, Eq, Ord)
 
 data UnOp = Abs    -- Num a
@@ -42,6 +45,9 @@ showBinOp d Min   a b = showParen (d > 10) $ showString "min " . showsPrec 10 a 
 showBinOp d Max   a b = showParen (d > 10) $ showString "max " . showsPrec 10 a . showString " " . showsPrec 10 b
 showBinOp d And   a b = showParen (d > 3) $ showsPrec 3 a . showString " && " . showsPrec 4 b
 showBinOp d Or    a b = showParen (d > 2) $ showsPrec 2 a . showString " || " . showsPrec 3 b
+showBinOp d Xor   a b = showParen (d > 5) $ showsPrec 5 a . showString " `xor` " . showsPrec 6 b
+showBinOp d BAnd  a b = showParen (d > 7) $ showsPrec 7 a . showString " .&. " . showsPrec 8 b
+showBinOp d BOr   a b = showParen (d > 5) $ showsPrec 5 a . showString " .|. " . showsPrec 6 b
 
 showCompOp :: Show a => Int -> CompOp -> a -> a -> ShowS
 showCompOp d EQU a b = showParen (d > 4) $ showsPrec 4 a . showString " == " . showsPrec 4 b
