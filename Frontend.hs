@@ -243,6 +243,10 @@ backpermute sh2 perm (Pull ixf sh1) = Pull (ixf . perm) sh2
 
 data Push sh a = Push ((Shape sh -> a -> M ()) -> M ()) (Shape sh)
 
+instance P.Functor (Push sh) where
+  fmap f (Push m sh) = Push m' sh
+    where m' k = m (\i a -> k i (f a))
+
 
 storePush :: Storable a => Push sh (Expr a) -> M (Expr (IOUArray Length a))
 storePush (Push m sh) =
