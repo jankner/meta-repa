@@ -34,8 +34,11 @@ import qualified Language.Haskell.TH as TH
 import Language.Haskell.TH hiding (Type)
 import Language.Haskell.TH.Lib
 
+import GHC.Prim
 import GHC.Exts
 import GHC.Real
+import GHC.Int
+import GHC.Word
 
 
 
@@ -43,64 +46,66 @@ data Expr =
   -- Int -> a
     Var Int
   -- P a -> a -> a -> a
-  | BinOp BinOp Expr Expr
+  | BinOp Type BinOp Expr Expr
   -- P a -> a -> a
-  | UnOp UnOp Expr
+  | UnOp Type UnOp Expr
   -- Num a => Integer -> a
   | FromInteger TypeConst Integer
   -- Fractional a => Rational -> a
   | FromRational TypeConst Rational
   -- (Integral a, Num b) => a -> b
-  | FromIntegral Type Expr
+  | FromIntegral Type Type Expr
 
   -- Bool -> Bool
   | BoolLit Bool
 
   -- CompOp a -> a -> a -> Bool
-  | Compare CompOp Expr Expr
+  | Compare Type CompOp Expr Expr
 
   | Unit
   
   -- a -> b -> (a,b)
   | Tup2 Expr Expr
   -- (a,b) -> a
-  | Fst Expr
+  | Fst Type Expr
   -- (a,b) -> b
-  | Snd Expr
+  | Snd Type Expr
 
   -- [a1..an] -> (a1,..an)
   | TupN [Expr]
 
   -- n -> i-> (a1,..ai,..an) -> ai
-  | GetN Int Int Expr
+  | GetN Type Int Expr
   
   -- Int -> a -> b -> b
   | Let Int Expr Expr
+
+  | LetAnn Int Type Expr Expr
   
   -- (a -> b) -> a -> b
-  | App Expr Expr
+  | App Expr Type Expr
   -- Int -> b -> (a -> b)
   | Lambda Int Type Expr
   
   -- a -> IO a
-  | Return Expr
+  | Return Type Expr
   -- IO a -> (a -> IO b) -> IO b
-  | Bind Expr Expr
+  | Bind Type Expr Expr
 
   -- Bool -> a -> a -> a
   | If Expr Expr Expr
   
   -- ((a -> r) -> a -> r) -> a -> r
-  | Rec Expr Expr
+  | Rec Type Expr Expr
   -- (s -> Bool) -> (s -> s) -> s -> s
-  | IterateWhile Expr Expr Expr
+  | IterateWhile Type Expr Expr Expr
   -- (s -> Bool) -> (s -> s) -> (s -> IO ()) -> s -> (IO ())
-  | WhileM Expr Expr Expr Expr
+  | WhileM Type Expr Expr Expr Expr
   
   -- (MArray IOUArray a IO, IArray UArray a) => (IO (IOUArray Int a)) -> (UArray Int a)
   | RunMutableArray Expr
   -- IArray UArray a => (UArray Int a) -> Int -> a
-  | ReadIArray Expr Expr
+  | ReadIArray Type Expr Expr
   -- IArray UArray a => (UArray Int a) -> Int
   | ArrayLength Expr
   
@@ -109,7 +114,7 @@ data Expr =
   -- MArray IOUArray a IO => (IOUArray Int a) -> Int -> (IO a)
   | ReadArray Expr Expr
   -- MArray IOUArray a IO => (IOUArray Int a) -> Int -> a -> (IO ())
-  | WriteArray Expr Expr Expr
+  | WriteArray Type Expr Expr Expr
   -- Int -> (Int -> IO ()) -> (IO ())
   | ParM Expr Expr
   -- (IO ())
@@ -165,39 +170,39 @@ rename k e | isAtomic e = return e
 instance Eq Expr where
   e1 == e2 = canonicalAlphaRename e1 `eq` canonicalAlphaRename e2
 
-eq (Var v1)                (Var v2)                = v1 == v2
-eq (BinOp op1 a1 b1)       (BinOp op2 a2 b2)       = op1 == op2 && a1 `eq` a2 && b1 `eq` b2
-eq (Compare op1 a1 b1)     (Compare op2 a2 b2)     = op1 == op2 && a1 `eq` a2 && b1 `eq` b2
-eq (UnOp op1 a1)           (UnOp op2 a2)           = op1 == op2 && a1 `eq` a2
-eq (FromInteger t1 i1)     (FromInteger t2 i2)     = t1 == t2 && i1 == i2
-eq (FromRational t1 r1)    (FromRational t2 r2)    = t1 == t2 && r1 == r2
-eq (FromIntegral t1 a1)    (FromIntegral t2 a2)    = t1 == t2 && a1 `eq` a2
-eq (BoolLit b1)            (BoolLit b2)            = b1 == b2
-eq (Tup2 a1 b1)            (Tup2 a2 b2)            = a1 `eq` a2 && b1 `eq` b2
-eq (Fst a1)                (Fst a2)                = a1 `eq` a2
-eq (Snd a1)                (Snd a2)                = a1 `eq` a2
-eq (TupN as1)              (TupN as2)              = foldl1 (&&) (zipWith eq as1 as2)
-eq (GetN n1 i1 a1)         (GetN n2 i2 a2)         = n1 == n2 && i1 == i2 && a1 `eq` a2
-eq (Let v1 a1 b1)          (Let v2 a2 b2)          = v1 == v2 && a1 `eq` a2 && b1 `eq` b2 
-eq (App a1 b1)             (App a2 b2)             = a1 `eq` a2 && b1 `eq` b2 
-eq (Lambda v1 t1 a1)       (Lambda v2 t2 a2)       = v1 == v2 && t1 == t2 && a1 `eq` a2
-eq (Return a1)             (Return a2)             = a1 `eq` a2
-eq (Bind a1 b1)            (Bind a2 b2)            = a1 `eq` a2 && b1 `eq` b2
-eq (If a1 b1 c1)           (If a2 b2 c2)           = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
-eq (Rec a1 b1)             (Rec a2 b2)             = a1 `eq` a2 && b1 `eq` b2 
-eq (IterateWhile a1 b1 c1) (IterateWhile a2 b2 c2) = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
-eq (WhileM a1 b1 c1 d1)    (WhileM a2 b2 c2 d2)    = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2 && d1 `eq` d2
-eq (RunMutableArray a1)    (RunMutableArray a2)    = a1 `eq` a2
-eq (ReadIArray a1 b1)      (ReadIArray a2 b2)      = a1 `eq` a2 && b1 `eq` b2
-eq (ArrayLength a1)        (ArrayLength a2)        = a1 `eq` a2
-eq (NewArray t1 a1)        (NewArray t2 a2)        = t1 == t2 && a1 `eq` a2
-eq (ReadArray a1 b1)       (ReadArray a2 b2)       = a1 `eq` a2 && b1 `eq` b2
-eq (WriteArray a1 b1 c1)   (WriteArray a2 b2 c2)   = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
-eq (ParM a1 b1)            (ParM a2 b2)            = a1 `eq` a2 && b1 `eq` b2
-eq (Unit)                  (Unit)                  = True
-eq (Skip)                  (Skip)                  = True
-eq (Print a1)              (Print a2)              = a1 `eq` a2
-eq _                       _                       = False
+eq (Var v1)                   (Var v2)                   = v1 == v2
+eq (BinOp t1 op1 a1 b1)       (BinOp t2 op2 a2 b2)       = t1 == t2 && op1 == op2 && a1 `eq` a2 && b1 `eq` b2
+eq (Compare t1 op1 a1 b1)     (Compare t2 op2 a2 b2)     = t1 == t2 && op1 == op2 && a1 `eq` a2 && b1 `eq` b2
+eq (UnOp t1 op1 a1)           (UnOp t2 op2 a2)           = t1 == t2 && op1 == op2 && a1 `eq` a2
+eq (FromInteger t1 i1)        (FromInteger t2 i2)        = t1 == t2 && i1 == i2
+eq (FromRational t1 r1)       (FromRational t2 r2)       = t1 == t2 && r1 == r2
+eq (FromIntegral t1 _ a1)     (FromIntegral t2 _ a2)     = t1 == t2 && a1 `eq` a2
+eq (BoolLit b1)               (BoolLit b2)               = b1 == b2
+eq (Tup2 a1 b1)               (Tup2 a2 b2)               = a1 `eq` a2 && b1 `eq` b2
+eq (Fst t1 a1)                (Fst t2 a2)                = t1 == t2 && a1 `eq` a2
+eq (Snd t1 a1)                (Snd t2 a2)                = t1 == t2 && a1 `eq` a2
+eq (TupN as1)                 (TupN as2)                 = foldl1 (&&) (zipWith eq as1 as2)
+eq (GetN t1 i1 a1)            (GetN t2 i2 a2)            = t1 == t2 && i1 == i2 && a1 `eq` a2
+eq (Let v1 a1 b1)             (Let v2 a2 b2)             = v1 == v2 && a1 `eq` a2 && b1 `eq` b2 
+eq (App a1 t1 b1)             (App a2 t2 b2)             = a1 `eq` a2 && t1 == t2 && b1 `eq` b2 
+eq (Lambda v1 t1 a1)          (Lambda v2 t2 a2)          = v1 == v2 && t1 == t2 && a1 `eq` a2
+eq (Return t1 a1)             (Return t2 a2)             = t1 == t2 && a1 `eq` a2
+eq (Bind t1 a1 b1)            (Bind t2 a2 b2)            = t1 == t2 && a1 `eq` a2 && b1 `eq` b2
+eq (If a1 b1 c1)              (If a2 b2 c2)              = a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (Rec _ a1 b1)              (Rec _ a2 b2)              = a1 `eq` a2 && b1 `eq` b2 
+eq (IterateWhile t1 a1 b1 c1) (IterateWhile t2 a2 b2 c2) = t1 == t2 && a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (WhileM t1 a1 b1 c1 d1)    (WhileM t2 a2 b2 c2 d2)    = t1 == t2 && a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2 && d1 `eq` d2
+eq (RunMutableArray a1)       (RunMutableArray a2)       = a1 `eq` a2
+eq (ReadIArray t1 a1 b1)      (ReadIArray t2 a2 b2)      = t1 == t2 && a1 `eq` a2 && b1 `eq` b2
+eq (ArrayLength a1)           (ArrayLength a2)           = a1 `eq` a2
+eq (NewArray t1 a1)           (NewArray t2 a2)           = t1 == t2 && a1 `eq` a2
+eq (ReadArray a1 b1)          (ReadArray a2 b2)          = a1 `eq` a2 && b1 `eq` b2
+eq (WriteArray t1 a1 b1 c1)   (WriteArray t2 a2 b2 c2)   = t1 == t2 && a1 `eq` a2 && b1 `eq` b2 && c1 `eq` c2
+eq (ParM a1 b1)               (ParM a2 b2)               = a1 `eq` a2 && b1 `eq` b2
+eq (Unit)                     (Unit)                     = True
+eq (Skip)                     (Skip)                     = True
+eq (Print a1)                 (Print a2)                 = a1 `eq` a2
+eq _                          _                          = False
 
 
 instance Ord Expr where
@@ -219,72 +224,72 @@ cmpList (x:xs) (y:ys) =
     EQ -> cmpList xs ys
     o  -> o
   
-cmp (Var v1)                (Var v2)                = compare v1 v2
-cmp (BinOp op1 a1 b1)       (BinOp op2 a2 b2)       = compare op1 op2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (Compare op1 a1 b1)     (Compare op2 a2 b2)     = compare op1 op2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (UnOp op1 a1)           (UnOp op2 a2)           = compare op1 op2 `lexi` a1 `cmp` a2
-cmp (FromInteger t1 i1)     (FromInteger t2 i2)     = compare t1 t2 `lexi` compare i1 i2
-cmp (FromRational t1 r1)    (FromRational t2 r2)    = compare t1 t2 `lexi` compare r1 r2
-cmp (FromIntegral t1 a1)    (FromIntegral t2 a2)    = compare t1 t2 `lexi` a1 `cmp` a2
-cmp (BoolLit b1)            (BoolLit b2)            = compare b1 b2
-cmp (Tup2 a1 b1)            (Tup2 a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (Fst a1)                (Fst a2)                = a1 `cmp` a2
-cmp (Snd a1)                (Snd a2)                = a1 `cmp` a2
-cmp (TupN as1)              (TupN as2)              = cmpList as1 as2
-cmp (GetN n1 i1 a1)         (GetN n2 i2 a2)         = compare n1 n2 `lexi` compare i1 i2 `lexi` a1 `cmp` a2
-cmp (Let v1 a1 b1)          (Let v2 a2 b2)          = compare v1 v2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2 
-cmp (App a1 b1)             (App a2 b2)             = a1 `cmp` a2 `lexi` b1 `cmp` b2 
-cmp (Lambda v1 t1 a1)       (Lambda v2 t2 a2)       = compare v1 v2 `lexi` compare t1 t2 `lexi` a1 `cmp` a2
-cmp (Return a1)             (Return a2)             = a1 `cmp` a2
-cmp (Bind a1 b1)            (Bind a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (If a1 b1 c1)           (If a2 b2 c2)           = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
-cmp (Rec a1 b1)             (Rec a2 b2)             = a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (IterateWhile a1 b1 c1) (IterateWhile a2 b2 c2) = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
-cmp (WhileM a1 b1 c1 d1)    (WhileM a2 b2 c2 d2)    = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2 `lexi` d1 `cmp` d2
-cmp (RunMutableArray a1)    (RunMutableArray a2)    = a1 `cmp` a2
-cmp (ReadIArray a1 b1)      (ReadIArray a2 b2)      = a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (ArrayLength a1)        (ArrayLength a2)        = a1 `cmp` a2
-cmp (NewArray t1 a1)        (NewArray t2 a2)        = compare t1 t2 `lexi` a1 `cmp` a2
-cmp (ReadArray a1 b1)       (ReadArray a2 b2)       = a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (WriteArray a1 b1 c1)   (WriteArray a2 b2 c2)   = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
-cmp (ParM a1 b1)            (ParM a2 b2)            = a1 `cmp` a2 `lexi` b1 `cmp` b2
-cmp (Skip)                  (Skip)                  = EQ
-cmp (Print a1)              (Print a2)              = a1 `cmp` a2
-cmp e1 e2                                           = compare (exprOrd e1) (exprOrd e2)
+cmp (Var v1)                   (Var v2)                   = compare v1 v2
+cmp (BinOp t1 op1 a1 b1)       (BinOp t2 op2 a2 b2)       = compare t1 t2 `lexi` compare op1 op2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (Compare t1 op1 a1 b1)     (Compare t2 op2 a2 b2)     = compare t1 t2 `lexi` compare op1 op2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (UnOp t1 op1 a1)           (UnOp t2 op2 a2)           = compare t1 t2 `lexi` compare op1 op2 `lexi` a1 `cmp` a2
+cmp (FromInteger t1 i1)        (FromInteger t2 i2)        = compare t1 t2 `lexi` compare i1 i2
+cmp (FromRational t1 r1)       (FromRational t2 r2)       = compare t1 t2 `lexi` compare r1 r2
+cmp (FromIntegral t1 _ a1)     (FromIntegral t2 _ a2)     = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (BoolLit b1)               (BoolLit b2)               = compare b1 b2
+cmp (Tup2 a1 b1)               (Tup2 a2 b2)               = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (Fst t1 a1)                (Fst t2 a2)                = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (Snd t1 a1)                (Snd t2 a2)                = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (TupN as1)                 (TupN as2)                 = cmpList as1 as2
+cmp (GetN t1 i1 a1)            (GetN t2 i2 a2)            = compare t1 t2 `lexi` compare i1 i2 `lexi` a1 `cmp` a2
+cmp (Let v1 a1 b1)             (Let v2 a2 b2)             = compare v1 v2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2 
+cmp (App a1 t1 b1)             (App a2 t2 b2)             = a1 `cmp` a2 `lexi` compare t1 t2 `lexi` b1 `cmp` b2 
+cmp (Lambda v1 t1 a1)          (Lambda v2 t2 a2)          = compare v1 v2 `lexi` compare t1 t2 `lexi` a1 `cmp` a2
+cmp (Return t1 a1)             (Return t2 a2)             = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (Bind t1 a1 b1)            (Bind t2 a2 b2)            = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (If a1 b1 c1)              (If a2 b2 c2)              = a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (Rec _ a1 b1)              (Rec _ a2 b2)              = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (IterateWhile t1 a1 b1 c1) (IterateWhile t2 a2 b2 c2) = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (WhileM t1 a1 b1 c1 d1)    (WhileM t2 a2 b2 c2 d2)    = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2 `lexi` d1 `cmp` d2
+cmp (RunMutableArray a1)       (RunMutableArray a2)       = a1 `cmp` a2
+cmp (ReadIArray t1 a1 b1)      (ReadIArray t2 a2 b2)      = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (ArrayLength a1)           (ArrayLength a2)           = a1 `cmp` a2
+cmp (NewArray t1 a1)           (NewArray t2 a2)           = compare t1 t2 `lexi` a1 `cmp` a2
+cmp (ReadArray a1 b1)          (ReadArray a2 b2)          = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (WriteArray t1 a1 b1 c1)   (WriteArray t2 a2 b2 c2)   = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2 `lexi` c1 `cmp` c2
+cmp (ParM a1 b1)               (ParM a2 b2)               = a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (Skip)                     (Skip)                     = EQ
+cmp (Print a1)                 (Print a2)                 = a1 `cmp` a2
+cmp e1 e2                                                 = compare (exprOrd e1) (exprOrd e2)
 
 exprOrd :: Expr -> Int
-exprOrd (Var _)              = 1
-exprOrd (BinOp _ _ _)        = 2
-exprOrd (Compare _ _ _)      = 3
-exprOrd (UnOp _ _)           = 4
-exprOrd (FromInteger _ _)    = 5
-exprOrd (FromRational _ _)   = 6
-exprOrd (FromIntegral _ _)   = 7
-exprOrd (BoolLit _)          = 8
-exprOrd (Tup2 _ _)           = 9
-exprOrd (Fst _)              = 10
-exprOrd (Snd _)              = 11
-exprOrd (TupN _)             = 12
-exprOrd (GetN _ _ _)         = 13
-exprOrd (Let _ _ _)          = 14
-exprOrd (App _ _)            = 15
-exprOrd (Lambda _ _ _)       = 16
-exprOrd (Return _)           = 17
-exprOrd (Bind _ _)           = 18
-exprOrd (If _ _ _)           = 19
-exprOrd (IterateWhile _ _ _) = 20
-exprOrd (WhileM _ _ _ _)     = 21
-exprOrd (RunMutableArray _)  = 22
-exprOrd (ReadIArray _ _)     = 23
-exprOrd (ArrayLength _)      = 24
-exprOrd (NewArray _ _)       = 25
-exprOrd (ReadArray _ _)      = 26
-exprOrd (WriteArray _ _ _)   = 28
-exprOrd (ParM _ _)           = 29
-exprOrd (Unit)               = 30
-exprOrd (Skip)               = 31
-exprOrd (Print _)            = 32
-exprOrd (Rec _ _)            = 33
+exprOrd (Var _)                = 1
+exprOrd (BinOp _ _ _ _)        = 2
+exprOrd (Compare _ _ _ _)      = 3
+exprOrd (UnOp _ _ _)           = 4
+exprOrd (FromInteger _ _)      = 5
+exprOrd (FromRational _ _)     = 6
+exprOrd (FromIntegral _ _ _)   = 7
+exprOrd (BoolLit _)            = 8
+exprOrd (Tup2 _ _)             = 9
+exprOrd (Fst _ _)              = 10
+exprOrd (Snd _ _)              = 11
+exprOrd (TupN _)               = 12
+exprOrd (GetN _ _ _)           = 13
+exprOrd (Let _ _ _)            = 14
+exprOrd (App _ _ _)            = 15
+exprOrd (Lambda _ _ _)         = 16
+exprOrd (Return _ _)           = 17
+exprOrd (Bind _ _ _)           = 18
+exprOrd (If _ _ _)             = 19
+exprOrd (IterateWhile _ _ _ _) = 20
+exprOrd (WhileM _ _ _ _ _)     = 21
+exprOrd (RunMutableArray _)    = 22
+exprOrd (ReadIArray _ _ _)     = 23
+exprOrd (ArrayLength _)        = 24
+exprOrd (NewArray _ _)         = 25
+exprOrd (ReadArray _ _)        = 26
+exprOrd (WriteArray _ _ _ _)   = 28
+exprOrd (ParM _ _)             = 29
+exprOrd (Unit)                 = 30
+exprOrd (Skip)                 = 31
+exprOrd (Print _)              = 32
+exprOrd (Rec _ _ _)            = 33
 
 -- General traversal
 
@@ -302,34 +307,34 @@ exprRec :: ((Expr -> a) -> Expr -> a)
         -> (a -> a -> a -> a -> a)
         -> Expr
         -> a
-exprRec f g2 g3 g4 e@(FromIntegral t e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(UnOp op e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Fst e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Snd e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(Return e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(FromIntegral t s e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(UnOp t op e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Fst t e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Snd t e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Return _ e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(NewArray _ e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(RunMutableArray e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(ArrayLength e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Print e1) = exprFold f g2 g3 g4 e1
-exprRec f g2 g3 g4 e@(GetN l n e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(GetN t n e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Lambda v t e1) = exprFold f g2 g3 g4 e1
 
-exprRec f g2 g3 g4 e@(Rec e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(App e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(BinOp op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(Compare op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Rec t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(App e1 t e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(BinOp t op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Compare t op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Tup2 e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Let v e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(Bind e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
-exprRec f g2 g3 g4 e@(ReadIArray e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Bind t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(ReadIArray t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(ReadArray e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(ParM e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 
 exprRec f g2 g3 g4 e@(If e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
-exprRec f g2 g3 g4 e@(IterateWhile e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
-exprRec f g2 g3 g4 e@(WriteArray e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
+exprRec f g2 g3 g4 e@(IterateWhile t e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
+exprRec f g2 g3 g4 e@(WriteArray t e1 e2 e3) = g3 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3)
 
-exprRec f g2 g3 g4 e@(WhileM e1 e2 e3 e4) = g4 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3) (exprFold f g2 g3 g4 e4)
+exprRec f g2 g3 g4 e@(WhileM t e1 e2 e3 e4) = g4 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2) (exprFold f g2 g3 g4 e3) (exprFold f g2 g3 g4 e4)
 
 exprRec f g2 g3 g4 e@(TupN es) = foldl1 g2 (map (exprFold f g2 g3 g4) es)
 
@@ -352,34 +357,34 @@ exprTrav :: Monad m
          -> (a -> a -> a)
          -> Expr
          -> m (Expr,a)
-exprTrav f g e@(FromIntegral t e1) = liftM ((FromIntegral t) *** id) (exprTraverse f g e1)
-exprTrav f g e@(UnOp op e1) = liftM ((UnOp op) *** id) (exprTraverse f g e1)
-exprTrav f g e@(Fst e1) = liftM (Fst *** id) (exprTraverse f g e1)
-exprTrav f g e@(Snd e1) = liftM (Snd *** id) (exprTraverse f g e1)
+exprTrav f g e@(FromIntegral t s e1) = liftM ((FromIntegral t s) *** id) (exprTraverse f g e1)
+exprTrav f g e@(UnOp t op e1) = liftM ((UnOp t op) *** id) (exprTraverse f g e1)
+exprTrav f g e@(Fst t e1) = liftM ((Fst t) *** id) (exprTraverse f g e1)
+exprTrav f g e@(Snd t e1) = liftM ((Snd t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Lambda v t e1) = liftM ((Lambda v t) *** id) (exprTraverse f g e1)
-exprTrav f g e@(Return e1) = liftM (Return *** id) (exprTraverse f g e1)
+exprTrav f g e@(Return t e1) = liftM ((Return t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(NewArray t e1) = liftM ((NewArray t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(RunMutableArray e1) = liftM (RunMutableArray *** id) (exprTraverse f g e1)
 exprTrav f g e@(ArrayLength e1) = liftM (ArrayLength *** id) (exprTraverse f g e1)
 exprTrav f g e@(Print e1) = liftM (Print *** id) (exprTraverse f g e1)
-exprTrav f g e@(GetN l n e1) = liftM ((GetN l n) *** id) (exprTraverse f g e1)
+exprTrav f g e@(GetN t n e1) = liftM ((GetN t n) *** id) (exprTraverse f g e1)
 
-exprTrav f g e@(Rec e1 e2) = liftM2 (Rec **** g) (exprTraverse f g e1) (exprTraverse f g e2)
-exprTrav f g e@(App e1 e2) = liftM2 (App **** g) (exprTraverse f g e1) (exprTraverse f g e2)
-exprTrav f g e@(BinOp op e1 e2) = liftM2 ((BinOp op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
-exprTrav f g e@(Compare op e1 e2) = liftM2 ((Compare op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(Rec t e1 e2) = liftM2 ((Rec t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(App e1 t e2) = liftM2 ((flip App t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(BinOp t op e1 e2) = liftM2 ((BinOp t op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(Compare t op e1 e2) = liftM2 ((Compare t op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Tup2 e1 e2) = liftM2 (Tup2 **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Let v e1 e2) = liftM2 ((Let v) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
-exprTrav f g e@(Bind e1 e2) = liftM2 (Bind **** g) (exprTraverse f g e1) (exprTraverse f g e2)
-exprTrav f g e@(ReadIArray e1 e2) = liftM2 (ReadIArray **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(Bind t e1 e2) = liftM2 ((Bind t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(ReadIArray t e1 e2) = liftM2 ((ReadIArray t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(ReadArray e1 e2) = liftM2 (ReadArray **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(ParM e1 e2) = liftM2 (ParM **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 
 exprTrav f g e@(If e1 e2 e3) = liftM3 (If ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
-exprTrav f g e@(IterateWhile e1 e2 e3) = liftM3 (IterateWhile ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
-exprTrav f g e@(WriteArray e1 e2 e3) = liftM3 (WriteArray ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
+exprTrav f g e@(IterateWhile t e1 e2 e3) = liftM3 ((IterateWhile t) ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
+exprTrav f g e@(WriteArray t e1 e2 e3) = liftM3 ((WriteArray t) ***** (reducel3 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3)
 
-exprTrav f g e@(WhileM e1 e2 e3 e4) = liftM4 (WhileM ****** (reducel4 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3) (exprTraverse f g e4)
+exprTrav f g e@(WhileM t e1 e2 e3 e4) = liftM4 ((WhileM t) ****** (reducel4 g)) (exprTraverse f g e1) (exprTraverse f g e2) (exprTraverse f g e3) (exprTraverse f g e4)
 exprTrav f g e@(TupN es) =
   do (es',as) <- liftM unzip $ mapM (exprTraverse f g) es
      return (TupN es', foldl1 g as)
@@ -489,7 +494,7 @@ cse e = eFinal
   where ((e',fvs), s, varMap) = runCSE (exprTraverse thing IS.union e)
         e'' = letBindExprs (exprMap s) e'
         varMap' = varMap `IM.union` (exprMapToVarMap (exprMap s))
-        eFinal = trace ("e'': " ++ (show e'')) $ undoSome varMap' e''
+        eFinal = undoSome varMap' e''
 
 addEnvVar :: Int -> CSEM a -> CSEM a
 addEnvVar v = local (v:)
@@ -586,44 +591,45 @@ instance Show Expr where
 
 showExpr :: Int -> Expr -> ShowS
 showExpr d (Var v) = showsVar v
-showExpr d (UnOp op a) =
+showExpr d (UnOp t op a) =
   case op of
     Abs    -> showApp d "abs" [a]
     Signum -> showApp d "signum" [a]
     Recip  -> showApp d "recip" [a]
-showExpr d (BinOp op a b)  = showBinOp d op a b
-showExpr d (Compare op a b) = showCompOp d op a b
+showExpr d (BinOp t op a b)  = showBinOp d op a b
+showExpr d (Compare t op a b) = showCompOp d op a b
 showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
 showExpr d (FromRational t r) =
   case t of
     TFloat  -> shows (fromRational r :: Float)
     TDouble -> shows (fromRational r :: Double)
-showExpr d (FromIntegral t a) = showApp d "fromIntegral" [a]
+showExpr d (FromIntegral t s a) = showApp d "fromIntegral" [a]
 showExpr d (BoolLit b)     = shows b
 showExpr d (Unit) = showString "()"
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
-showExpr d (Fst a) = showApp d "fst" [a]
-showExpr d (Snd a) = showApp d "snd" [a]
+showExpr d (Fst t a) = showApp d "fst" [a]
+showExpr d (Snd t a) = showApp d "snd" [a]
 showExpr d (TupN as) = showString "(" . showsTup as
-showExpr d (GetN l n a) = showApp d ("get" ++ (show l) ++ "_" ++ (show n)) [a]
-showExpr d (Return a) = showApp d "return" [a]
-showExpr d (Bind m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
+showExpr d (GetN t n a) = showApp d ("get" ++ (show t) ++ "_" ++ (show n)) [a]
+showExpr d (Return t a) = showApp d "return" [a]
+showExpr d (Bind t m f) = showParen (d > 1) $ showsPrec 1 m . showString " >>= " . showsPrec 2 f
 showExpr d (If cond a b) = showParen (d > 0) $ showString "if " . showsPrec 0 cond . showString " then " . showsPrec 0 a . showString " else " . showsPrec 0 b
-showExpr d (Rec f a) = showApp d "rec" [f,a]
-showExpr d (IterateWhile cond step init) = showApp d "iterateWhile" [cond,step,init]
-showExpr d (WhileM cond step action init) = showApp d "whileM" [cond,step,action,init]
+showExpr d (Rec t f a) = showApp d "rec" [f,a]
+showExpr d (IterateWhile t cond step init) = showApp d "iterateWhile" [cond,step,init]
+showExpr d (WhileM t cond step action init) = showApp d "whileM" [cond,step,action,init]
 showExpr d (RunMutableArray arr) = showApp d "runMutableArray" [arr]
-showExpr d (ReadIArray arr ix)   = showApp d "readIArray" [arr,ix]
+showExpr d (ReadIArray t arr ix)   = showApp d "readIArray" [arr,ix]
 showExpr d (ArrayLength arr)     = showApp d "arrayLength" [arr]
 showExpr d (NewArray t l)        = showApp d "newArray" [l]
 showExpr d (ReadArray arr ix)    = showApp d "readArray" [arr,ix]
-showExpr d (WriteArray arr ix a) = showApp d "writeArray" [arr,ix,a]
+showExpr d (WriteArray t arr ix a) = showApp d "writeArray" [arr,ix,a]
 showExpr d (ParM n f) = showApp d "parM" [n,f]
 showExpr d Skip = showString "skip"
 showExpr d (Print a) = showApp d "print" [a]
 showExpr d (Let v e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
+showExpr d (LetAnn v t e1 e2) = showParen (d > 10) $ showString "let " . showsVar v . showString " :: " . shows t . showString " = " . showsPrec 0 e1 . showString " in " . showsPrec 0 e2
 showExpr d (Lambda v t e) = showString "(\\" . showsVar v . showString " :: " . shows t . showString " -> " . showsPrec 0 e . showString ")"
-showExpr d (App e1 e2) = showApp d (showsPrec 10 e1 "") [e2]
+showExpr d (App e1 t e2) = showApp d (showsPrec 10 e1 "") [e2]
 
 showsTup (a:[]) = showsPrec 0 a . showString ")"
 showsTup (a:as) = showsPrec 0 a . showString "," . showsTup as
@@ -640,97 +646,415 @@ showVar v = showsVar v ""
 
 -- Translation
 
-translate :: Expr -> Q Exp
-translate (Var v) = dyn (showVar v)
-translate (UnOp op e) = translateUnOp op (translate e)
-translate (BinOp op e1 e2) = translateBinOp op (translate e1) (translate e2)
-translate (FromInteger t i) = translateFromInteger t i
-translate (FromRational t (a :% b)) = sigE [| fromRational (a :% b) |] (translateTypeConst t)
-translate (FromIntegral t e) = sigE [| fromIntegral $(translate e) |] (translateType t)
-translate (BoolLit b) = [| b |]
-translate (Compare op e1 e2) = translateCompOp op (translate e1) (translate e2)
-translate (Unit) = [| () |]
-translate (Tup2 e1 e2) = tupE [translate e1, translate e2]
-translate (Fst e) = [| fst $(translate e) |]
-translate (Snd e) = [| snd $(translate e) |]
-translate (TupN es) = tupE (map translate es)
-translate (GetN n i e) =
-  do x <- newName "get"
-     let pat = tupP $ (replicate i wildP) ++ [varP x] ++ (replicate (n-i-1) wildP)
-     caseE (translate e) [match pat (normalB (varE x)) []]
-translate (App e1 e2) = [| let a = $(translate e2) in a `maybeDeepSeq` $(translate e1) a |]
-translate (Let v e1 e2) = letE [valD (varP v') (normalB (translate e1)) []] [| $(varE v') `maybeDeepSeq` $(translate e2) |]
-  where v' = mkName (showVar v)
-translate (Lambda v _ e1) = lam1E (varP v') [| $(varE v') `maybeDeepSeq` $(translate e1) |]
-  where v' = mkName (showVar v)
-translate (Return e) = [| return $(translate e) |]
-translate (Bind e1 e2) = [| $(translate e1) >>= $(translate e2) |]
-translate (If e1 e2 e3) = [| if $(translate e1) then $(translate e2) else $(translate e3) |]
-translate (IterateWhile e1 e2 e3) =
-  [| while $(translate e1) $(translate e2) $(translate e3) |]
-translate (WhileM e1 e2 e3 e4) =
-  [| whileM $(translate e1) $(translate e2) $(translate e3) $(translate e4) |]
-translate (RunMutableArray e) = [| runMutableArray $(translate e) |]
-translate (ReadIArray e1 e2) = [| $(translate e1) `unsafeAt` $(translate e2) |]
-translate (ArrayLength e) = [| snd (bounds $(translate e)) + 1 |]
-translate (NewArray t e) = sigE [| newIOUArray (0,$(translate e)-1) |] (translateType (TIO $ TMArr t))
-translate (WriteArray e1 e2 e3) = [| unsafeWrite $(translate e1) $(translate e2) $(translate e3) |]
-translate (ReadArray e1 e2) = [| unsafeRead $(translate e1) $(translate e2) |]
-translate (ParM e1 e2) = [| parM $(translate e1) $(translate e2) |]
-translate Skip = [| return () |]
-translate (Print e) = [| print $(translate e) |]
+--type Env = [(Int,Type)]
+
+lookEnv :: Env -> Int -> Maybe Type
+lookEnv = flip lookup
+
+translateW :: Type -> Expr -> Q Exp
+translateW t e = wrapValue t (translateU [] e)
+
+translateU :: Env -> Expr -> Q Exp
+translateU env (Var v) = return $ tupExpr [] (showVar v) t
+  where t = case lookEnv env v of
+              Just t  -> t
+              Nothing -> error ("unknown var: " ++ showVar v)
+translateU env (UnOp t op e) = translateUnOpU t op (translateU env e)
+translateU env (BinOp t op e1 e2) = translateBinOpU t op (translateU env e1) (translateU env e2)
+translateU env (FromInteger t i) = translateFromIntegerU t i
+translateU env (FromRational t (a :% b)) = translateFromRationalU t (a :% b)
+translateU env (FromIntegral t s e) = 
+  caseE [| fromIntegral $(wrapValue s (translateU env e)) |]
+    [match (return $ typeToPatternB "f" t) (normalB $ return $ tupExpr [] "f" t) []]
+translateU env (BoolLit b) = [| b |]
+translateU env (Compare t op e1 e2) = translateCompOpU t op (translateU env e1) (translateU env e2)
+translateU env (Unit) = [| () |]
+translateU env (Tup2 e1 e2) = unboxedTupE [translateU env e1, translateU env e2]
+translateU env (Fst t e) = translateGet env (GetN t 0 e)
+translateU env (Snd t e) = translateGet env (GetN t 1 e)
+translateU env (TupN es) = unboxedTupE (map (translateU env) es)
+translateU env e@(GetN t i _) = translateGet env e
+translateU env e@(App e1 t e2) = do
+  let (e',es,args) = translateApp 0 [] e
+  e'' <- translateU env e'
+  let e''' = foldl AppE e'' args
+  es' <- mapM (\(i,e,t) -> translateU env e) es
+  let decs = zipWith (\(i,e,t) e' -> expToDec ("t" ++ (show i)) t e') es es'
+  letE (map return decs) $
+    return e'''
+translateU env (LetAnn v t e1 e2) = do
+  e1' <- translateU env e1
+  let dec = expToDec (showVar v) t e1'
+  r <- letE [return $ dec] $
+    translateU ((v,t):env) e2
+  return r
+translateU env e@(Lambda v t e1) = sigE (translateLambdasU env [] e) (translateTypeUQ t)
+translateU env (Return t e) = letE
+  [valD (return (typeToPattern "w" t)) (normalB $ translateU env e) []]
+  [| return $(return (typeToExpB "w" t)) |]
+translateU env (Bind t e1 e2) = [| $(translateU env e1) >>= $wrap|]
+  where wrap = lamE [return $ typeToPatternB "w" t] (makeApp "w" t (translateU env e2))
+translateU env (If e1 e2 e3) = [| if $(translateU env e1) then $(translateU env e2) else $(translateU env e3) |]
+translateU env (Rec t e1 e2) = do
+  loopN <- newName "loop"
+  letE [
+    funD loopN $ [clause (map return (flatPat "a" t))
+      (normalB (makeApp "a" t ((translateU env e1) `appE` (varE loopN)))) []]]
+    (letBindAndApply "init" t (varE loopN) (translateU env e2))
+translateU env (IterateWhile t cond step init) = do
+  loopN <- newName "loop"
+  initN <- newName "init"
+  letE [
+    funD loopN $ [clause (map return (flatPat "s" t)) (guardedB
+      [ mamb2mab (normalG (makeApp "s" t (translateU env cond)), letBindAndApply "step" t (varE loopN) (makeApp "s" t (translateU env step)))
+      , mamb2mab (normalG [|True|], return $ tupExpr [] "s" t)
+      ])
+      []]]
+    (letBindAndApply "init" t (varE loopN) (translateU env init))
+translateU env (WhileM t cond step action init) = do
+  loopN <- newName "loop"
+  let condE = makeApp "s" t (translateU env cond)
+  let nextE = letBindAndApply "next" t (varE loopN) (makeApp "s" t (translateU env step))
+  let actionE = makeApp "s" t (translateU env action)
+  letE [
+    funD loopN $ [clause (map return (flatPat "s" t)) (guardedB
+      [ mamb2mab (normalG condE, [| $actionE >> $nextE |] )
+      , mamb2mab (normalG [| True |], [| return () |] )
+      ])
+      []]]
+    (letBindAndApply "init" t (varE loopN) (translateU env init))
+translateU env (RunMutableArray e) = [| runMutableArray $(translateU env e) |]
+translateU env (ReadIArray t e1 e2) = unwrap t [| $(translateU env e1) `unsafeAt` $(wrapValue tInt (translateU env e2)) |]
+translateU env (ArrayLength e) = [| snd (bounds $(translateU env e)) + 1 |]
+translateU env (NewArray t e) = sigE [| newIOUArray (0,$(wrapValue tInt (translateU env e))-1) |] (translateTypeUQ (TIO $ TMArr t))
+translateU env (WriteArray t e1 e2 e3) = [| unsafeWrite $(translateU env e1) $(wrapValue tInt (translateU env e2)) $(wrapValue t (translateU env e3)) |]
+translateU env (ReadArray e1 e2) = [| unsafeRead $(translateU env e1) $(wrapValue tInt (translateU env e2)) |]
+translateU env (ParM e1 e2) = [| parM $(translateU env e1) $(translateU env e2) |]
+translateU env Skip = [| return () |]
+translateU env (Print e) = [| print $(translateU env e) |]
+translateU env e = error (show e)
+
+letBindAndApply :: String -> Type -> Q Exp -> Q Exp -> Q Exp
+letBindAndApply n t e1 e2 = 
+    (letE [valD (return $ typeToPattern "init" t) (normalB e2) []]
+      (makeApp "init" t e1))
+
+mamb2mab :: Monad m => (m a, m b) -> m (a,b)
+mamb2mab = uncurry (liftM2 (,))
+
+makeApp :: String -> Type -> Q Exp -> Q Exp
+makeApp n (TConst TUnit) e = appE e (tupE [])
+makeApp n t e = foldl appE e (map return $ flatApp n t)
+
+translateLambdasU :: Env -> [(Int,Type)] -> Expr -> Q Exp
+translateLambdasU env vs (Lambda v (TFun t _) e) = translateLambdasU ((v,t):env) ((v,t):vs) e
+translateLambdasU env vs e = translateU env e >>= return . LamE (flatPats (reverse vs))
+
+flatPats :: [(Int,Type)] -> [Pat]
+flatPats []         = []
+flatPats ((v,t):vs) = (flatPat (showVar v) t) ++ (flatPats vs)
+
+flatPat :: String -> Type -> [Pat]
+flatPat n (TTup2 t1 t2) = (flatPat (n ++ "_0") t1) ++ (flatPat (n ++ "_1") t2)
+flatPat n (TTupN ts) = concat $ zipWith flatPat ns ts
+  where ns = map (\i -> n ++ "_" ++ show i) [0..length ts] 
+flatPat n t = [BangP $ VarP $ mkName n]
+
+expToDec :: String -> Type -> Exp -> Dec
+expToDec n t e = ValD (typeToPattern n t) (NormalB e) []
+
+translateApp :: Int -> [(Int,Expr,Type)] -> Expr -> (Expr,[(Int,Expr,Type)],[Exp])
+translateApp i es (App e1 t (Var v)) =
+  let (e',es',args) = translateApp i es e1
+      args' = args ++ (flatApp (showVar v) t)
+  in (e',es',args')
+translateApp i es (App e1 t e2) =
+  let (e',es',args) = translateApp (i+1) ((i,e2,t):es) e1
+      args' = args ++ (flatApp ("t" ++ show i) t)
+  in (e',es',args')
+translateApp i es e = (e,es,[])
+
+flatApp :: String -> Type -> [Exp]
+flatApp n (TTup2 t1 t2) = (flatApp (n ++ "_0") t1) ++ (flatApp (n ++ "_1") t2)
+flatApp n (TTupN ts)    = concat $ zipWith flatApp ns ts
+  where ns = map (\i -> n ++ "_" ++ show i) [0..length ts] 
+flatApp n t = [(VarE (mkName n))]
 
 
-translateFromInteger :: TypeConst -> Integer -> Q Exp
-translateFromInteger TInt i = sigE [| i |] [t| Int |]
-translateFromInteger TInt64 i = sigE [| i |] [t| Int64 |]
-translateFromInteger TWord i = sigE [| i |] [t| Word |]
-translateFromInteger TWord64 i = sigE [| i |] [t| Word64 |]
-translateFromInteger TFloat i = sigE [| i |] [t| Float |]
-translateFromInteger TDouble i = sigE [| i |] [t| Double |]
+translateGet :: Env -> Expr -> Q Exp
+translateGet env e@(GetN t _ _) = do
+  (n, m) <- translateGet' e []
+  case m of
+    Just (is, e) -> 
+      caseE (translateU env e) 
+        [match 
+          (return $ matchTupElem "t" t is) 
+          (normalB (return (tupExpr is "t" t))) []]
+    Nothing      -> varE n
 
-translateUnOp :: UnOp -> Q Exp -> Q Exp
-translateUnOp Abs    q = [| abs $(q) |]
-translateUnOp Signum q = [| signum $(q) |]
-translateUnOp Recip  q = [| recip $(q) |]
+translateGet' :: Expr -> [Int] -> Q (Name, Maybe ([Int],Expr))
+translateGet' (Fst t e)    is = translateGet' e (0:is)
+translateGet' (Snd t e)    is = translateGet' e (1:is)
+translateGet' (GetN t i e) is = translateGet' e (i:is)
+translateGet' (Var v) is = return (varTupElem v is, Nothing)
+translateGet' e is = do
+  n <- newName "get"
+  return (n, Just (is,e))
+
+varTupElem :: Int -> [Int] -> Name
+varTupElem v is = mkName ((showVar v) ++ "_" ++ (intercalate "_" $ map show is))
+
+tupExpr :: [Int] -> String -> Type -> Exp
+tupExpr []     n (TConst tc)   = VarE $ mkName n
+tupExpr []     n (TFun t1 t2)  = VarE $ mkName n
+tupExpr (0:is) n (TTup2 t1 t2) = tupExpr is n t1
+tupExpr (1:is) n (TTup2 t1 t2) = tupExpr is n t2
+tupExpr []     n (TTup2 t1 t2) = UnboxedTupE [tupExpr [] (n ++ "_0") t1, tupExpr [] (n ++ "_1") t2]
+tupExpr (i:is) n (TTupN ts)    = tupExpr is n (ts !! i)
+tupExpr []     n (TTupN ts)    = UnboxedTupE (zipWith (tupExpr []) ns ts)
+  where ns = map (\i -> n ++ "_" ++ show i) [0..length ts] 
+tupExpr []     n (TMArr t)     = VarE $ mkName n
+tupExpr []     n (TIArr t)     = VarE $ mkName n
+tupExpr []     n (TIO t)       = VarE $ mkName n
+tupExpr is     n t             = error "tupExpr: invalid arguments"
+
+matchTupElem :: String -> Type -> [Int] -> Pat
+matchTupElem n (TTup2 t1 t2) (0:is) = UnboxedTupP [matchTupElem n t1 is, WildP]
+matchTupElem n (TTup2 t1 t2) (1:is) = UnboxedTupP [WildP, matchTupElem n t2 is]
+matchTupElem n (TTupN ts)    (i:is) = UnboxedTupP $ zipWith f [0..] ts
+  where f j t | j == i    = matchTupElem (n ++ "_" ++ (show j)) t is
+              | otherwise = WildP
+matchTupElem n (TTup2 t1 t2) []     = typeToPattern n (TTup2 t1 t2)
+matchTupElem n (TTupN ts)    []     = typeToPattern n (TTupN ts)
+matchTupElem n t             []     = BangP $ VarP $ mkName n
+matchTupElem n t is = error ("matchTupElem: invalid arguments: " ++ n ++ ": " ++ (show t) ++ " | " ++ (show is))
+
+typeToExpB :: String -> Type -> Exp
+typeToExpB b (TConst tc) = typeConstToExpB b tc
+typeToExpB b (TFun  t1 t2) = VarE $ mkName b
+typeToExpB b (TTup2 t1 t2) = TupE [typeToExpB (b ++ "_0") t1, typeToExpB (b ++ "_1") t2]
+typeToExpB b (TTupN ts)    = TupE (zipWith typeToExpB bs ts)
+  where bs = map (\i -> b ++ "_" ++ show i) [0..length ts] 
+typeToExpB b (TMArr t) = VarE $ mkName b
+typeToExpB b (TIArr t) = VarE $ mkName b
+typeToExpB b (TIO   t) = VarE $ mkName b
+
+typeConstToExpB :: String -> TypeConst -> Exp
+typeConstToExpB b TInt    = ConE 'I# `AppE` (VarE (mkName b))
+typeConstToExpB b TInt64  = ConE 'I# `AppE` (VarE (mkName b))
+typeConstToExpB b TWord   = ConE 'W# `AppE` (VarE (mkName b))
+typeConstToExpB b TWord64 = ConE 'W# `AppE` (VarE (mkName b))
+typeConstToExpB b TFloat  = ConE 'F# `AppE` (VarE (mkName b))
+typeConstToExpB b TDouble = ConE 'D# `AppE` (VarE (mkName b))
+typeConstToExpB b TBool   = VarE $ mkName b
+typeConstToExpB b TUnit   = TupE []
+
+typeToPattern :: String -> Type -> Pat
+typeToPattern b (TConst tc) = BangP $ VarP $ mkName b
+typeToPattern b (TFun  t1 t2) = VarP $ mkName b
+typeToPattern b (TTup2 t1 t2) = UnboxedTupP [typeToPattern (b ++ "_0") t1, typeToPattern (b ++ "_1") t2]
+typeToPattern b (TTupN ts)    = UnboxedTupP (zipWith typeToPattern bs ts)
+  where bs = map (\i -> b ++ "_" ++ show i) [0..length ts] 
+typeToPattern b (TMArr t) = BangP $ VarP $ mkName b
+typeToPattern b (TIArr t) = BangP $ VarP $ mkName b
+typeToPattern b (TIO   t) = BangP $ VarP $ mkName b
+
+typeToPatternB :: String -> Type -> Pat
+typeToPatternB b (TConst tc) = typeConstToPatternB b tc
+typeToPatternB b (TFun  t1 t2) = VarP $ mkName b
+typeToPatternB b (TTup2 t1 t2) = TupP [typeToPatternB (b ++ "_0") t1, typeToPatternB (b ++ "_1") t2]
+typeToPatternB b (TTupN ts)    = TupP (zipWith typeToPatternB bs ts)
+  where bs = map (\i -> b ++ "_" ++ show i) [0..length ts] 
+typeToPatternB b (TMArr t) = BangP $ VarP $ mkName b
+typeToPatternB b (TIArr t) = BangP $ VarP $ mkName b
+typeToPatternB b (TIO   t) = BangP $ VarP $ mkName b
+
+typeConstToPatternB :: String -> TypeConst -> Pat
+typeConstToPatternB b TInt    = ConP 'I# [(VarP (mkName b))]
+typeConstToPatternB b TInt64  = ConP 'I# [(VarP (mkName b))]
+typeConstToPatternB b TWord   = ConP 'W# [(VarP (mkName b))]
+typeConstToPatternB b TWord64 = ConP 'W# [(VarP (mkName b))]
+typeConstToPatternB b TFloat  = ConP 'F# [(VarP (mkName b))]
+typeConstToPatternB b TDouble = ConP 'D# [(VarP (mkName b))]
+typeConstToPatternB b TBool   = BangP $ VarP $ mkName b
+typeConstToPatternB b TUnit   = TupP []
+
+translateTypeConstUQ :: TypeConst -> Q TH.Type
+translateTypeConstUQ = return . translateTypeConstU
+
+translateTypeConstU :: TypeConst -> TH.Type
+translateTypeConstU TInt    = ConT ''Int#
+translateTypeConstU TInt64  = ConT ''Int#
+translateTypeConstU TWord   = ConT ''Word#
+translateTypeConstU TWord64 = ConT ''Word#
+translateTypeConstU TFloat  = ConT ''Float#
+translateTypeConstU TDouble = ConT ''Double#
+translateTypeConstU TBool   = ConT ''Bool
+translateTypeConstU TUnit   = TupleT 0
+
+translateTypeUQ :: Type -> Q TH.Type
+translateTypeUQ = return . translateTypeU
+
+
+translateTypeU :: Type -> TH.Type
+translateTypeU (TConst tc) = translateTypeConstU tc
+translateTypeU (TFun  t1 t2) = foldr1 funT $ map translateTypeU $ (flattenType t1) ++ [t2]
+ where funT t1 t2 = (ArrowT `AppT` t1) `AppT` t2
+translateTypeU (TTup2 t1 t2) = UnboxedTupleT 2 `AppT` (translateTypeU t1) `AppT` (translateTypeU t2)
+translateTypeU (TTupN ts) = foldl AppT (UnboxedTupleT $ length ts) (map translateTypeU ts)
+translateTypeU (TMArr t) = (ConT ''IOUArray) `AppT` (ConT ''Int) `AppT` (translateType t)
+translateTypeU (TIArr t) = (ConT ''UArray) `AppT` (ConT ''Int) `AppT` (translateType t)
+translateTypeU (TIO   t) = (ConT ''IO) `AppT` (translateTypeU t)
+
+flattenType :: Type -> [Type]
+flattenType (TTup2 t1 t2) = (flattenType t1) ++ (flattenType t2)
+flattenType (TTupN ts) = concatMap flattenType ts
+flattenType t = [t]
+
+translateFromIntegerU :: TypeConst -> Integer -> Q Exp
+translateFromIntegerU TInt    i = litE (intPrimL i)
+translateFromIntegerU TInt64  i = litE (intPrimL i)
+translateFromIntegerU TWord   i = litE (wordPrimL i)
+translateFromIntegerU TWord64 i = litE (wordPrimL i)
+translateFromIntegerU TDouble i = litE (doublePrimL (i :% 1))
+translateFromIntegerU TFloat  i = litE (floatPrimL  (i :% 1))
+translateFromIntegerU t       _ = error ("fromInteger: unsupported type: " ++ show t)
+
+translateFromRationalU :: TypeConst -> Rational -> Q Exp
+translateFromRationalU TDouble r = litE (doublePrimL r)
+translateFromRationalU TFloat  r = litE (floatPrimL  r)
+translateFromRationalU _       _ = error "fromRational: unsupported type"
+
+
+translateUnOpU :: Type -> UnOp -> Q Exp -> Q Exp
+translateUnOpU t Abs    q = unwrap t [| abs $(wrapValue t q) |]
+translateUnOpU t Signum q = unwrap t [| signum $(wrapValue t q) |]
+translateUnOpU t Recip  q = unwrap t [| recip $(wrapValue t q) |]
       
-translateBinOp :: BinOp -> Q Exp -> Q Exp -> Q Exp
-translateBinOp Minus q1 q2 = [| $(q1) - $(q2) |]
-translateBinOp Plus  q1 q2 = [| $(q1) + $(q2) |]
-translateBinOp Mult  q1 q2 = [| $(q1) * $(q2) |]
-translateBinOp Quot  q1 q2 = [| $(q1) `quot` $(q2) |]
-translateBinOp Rem   q1 q2 = [| $(q1) `rem` $(q2) |]
-translateBinOp Div   q1 q2 = [| $(q1) `div` $(q2) |]
-translateBinOp Mod   q1 q2 = [| $(q1) `mod` $(q2) |]
-translateBinOp FDiv  q1 q2 = [| $(q1) / $(q2) |]
-translateBinOp Min   q1 q2 = [| min $(q1) $(q2) |]
-translateBinOp Max   q1 q2 = [| max $(q1) $(q2) |]
-translateBinOp And   q1 q2 = [| $(q1) && $(q2) |]
-translateBinOp Or    q1 q2 = [| $(q1) || $(q2) |]
+translateBinOpU :: Type -> BinOp -> Q Exp -> Q Exp -> Q Exp
+translateBinOpU (TConst TInt)    Minus q1 q2 = [| $q1 -# $q2 |]
+translateBinOpU (TConst TInt64)  Minus q1 q2 = [| $q1 -# $q2 |]
+translateBinOpU (TConst TWord)   Minus q1 q2 = [| minusWord#  $q1 $q2 |]
+translateBinOpU (TConst TWord64) Minus q1 q2 = [| minusWord#  $q1 $q2 |]
+translateBinOpU (TConst TFloat)  Minus q1 q2 = [| minusFloat# $q1 $q2 |]
+translateBinOpU (TConst TDouble) Minus q1 q2 = [| $q1 -## $q2 |]
+translateBinOpU (TConst TInt)    Plus  q1 q2 = [| $q1 +#  $q2 |]
+translateBinOpU (TConst TInt64)  Plus  q1 q2 = [| $q1 +#  $q2 |]
+translateBinOpU (TConst TWord)   Plus  q1 q2 = [| plusWord#  $q1 $q2 |]
+translateBinOpU (TConst TWord64) Plus  q1 q2 = [| plusWord#  $q1 $q2 |]
+translateBinOpU (TConst TFloat)  Plus  q1 q2 = [| plusFloat# $q1 $q2 |]
+translateBinOpU (TConst TDouble) Plus  q1 q2 = [| $q1 +## $q2 |]
+translateBinOpU (TConst TInt)    Mult  q1 q2 = [| $q1 *#  $q2 |]
+translateBinOpU (TConst TInt64)  Mult  q1 q2 = [| $q1 *#  $q2 |]
+translateBinOpU (TConst TWord)   Mult  q1 q2 = [| timesWord#  $q1 $q2 |]
+translateBinOpU (TConst TWord64) Mult  q1 q2 = [| timesWord#  $q1 $q2 |]
+translateBinOpU (TConst TFloat)  Mult  q1 q2 = [| timesFloat# $q1 $q2 |]
+translateBinOpU (TConst TDouble) Mult  q1 q2 = [| $q1 *## $q2 |]
+translateBinOpU (TConst TInt)    Quot  q1 q2 = [| quotInt#  $q1 $q2 |]
+translateBinOpU (TConst TWord)   Quot  q1 q2 = [| quotWord# $q1 $q2 |]
+translateBinOpU (TConst TInt)    Rem   q1 q2 = [| remInt#   $q1 $q2 |]
+translateBinOpU (TConst TWord)   Rem   q1 q2 = [| remWord#  $q1 $q2 |]
+translateBinOpU (TConst TFloat)  FDiv  q1 q2 = [| divideFloat# $q1 $q2 |]
+translateBinOpU (TConst TDouble) FDiv  q1 q2 = [| $q1 /## $q2 |]
+translateBinOpU t Minus q1 q2 = unwrap t [| $(wrapValue t q1) - $(wrapValue t q2) |]
+translateBinOpU t Plus  q1 q2 = unwrap t [| $(wrapValue t q1) + $(wrapValue t q2) |]
+translateBinOpU t Mult  q1 q2 = unwrap t [| $(wrapValue t q1) * $(wrapValue t q2) |]
+translateBinOpU t Quot  q1 q2 = unwrap t [| $(wrapValue t q1) `quot` $(wrapValue t q2) |]
+translateBinOpU t Rem   q1 q2 = unwrap t [| $(wrapValue t q1) `rem` $(wrapValue t q2) |]
+translateBinOpU t Div   q1 q2 = unwrap t [| $(wrapValue t q1) `div` $(wrapValue t q2) |]
+translateBinOpU t Mod   q1 q2 = unwrap t [| $(wrapValue t q1) `mod` $(wrapValue t q2) |]
+translateBinOpU t FDiv  q1 q2 = unwrap t [| $(wrapValue t q1) / $(wrapValue t q2) |]
+translateBinOpU t Min   q1 q2 = unwrap t [| min $(wrapValue t q1) $(wrapValue t q2) |]
+translateBinOpU t Max   q1 q2 = unwrap t [| max $(wrapValue t q1) $(wrapValue t q2) |]
+translateBinOpU t And   q1 q2 = unwrap t [| $(wrapValue t q1) && $(wrapValue t q2) |]
+translateBinOpU t Or    q1 q2 = unwrap t [| $(wrapValue t q1) || $(wrapValue t q2) |]
 
-translateCompOp :: CompOp -> Q Exp -> Q Exp -> Q Exp
-translateCompOp EQU q1 q2 = [| $(q1) == $(q2) |]
-translateCompOp NEQ q1 q2 = [| $(q1) /= $(q2) |]
-translateCompOp GTH q1 q2 = [| $(q1) >  $(q2) |]
-translateCompOp LTH q1 q2 = [| $(q1) <  $(q2) |]
-translateCompOp GEQ q1 q2 = [| $(q1) >= $(q2) |]
-translateCompOp LEQ q1 q2 = [| $(q1) <= $(q2) |]
+translateCompOpU :: Type -> CompOp -> Q Exp -> Q Exp -> Q Exp
+translateCompOpU (TConst TInt)   EQU q1 q2 = [| $q1 ==# $q2 |]
+translateCompOpU (TConst TInt)   NEQ q1 q2 = [| $q1 /=# $q2 |]
+translateCompOpU (TConst TInt)   GTH q1 q2 = [| $q1 >#  $q2 |]
+translateCompOpU (TConst TInt)   LTH q1 q2 = [| $q1 <#  $q2 |]
+translateCompOpU (TConst TInt)   GEQ q1 q2 = [| $q1 >=# $q2 |]
+translateCompOpU (TConst TInt)   LEQ q1 q2 = [| $q1 <=# $q2 |]
+translateCompOpU (TConst TInt64) EQU q1 q2 = [| $q1 ==# $q2 |]
+translateCompOpU (TConst TInt64) NEQ q1 q2 = [| $q1 /=# $q2 |]
+translateCompOpU (TConst TInt64) GTH q1 q2 = [| $q1 >#  $q2 |]
+translateCompOpU (TConst TInt64) LTH q1 q2 = [| $q1 <#  $q2 |]
+translateCompOpU (TConst TInt64) GEQ q1 q2 = [| $q1 >=# $q2 |]
+translateCompOpU (TConst TInt64) LEQ q1 q2 = [| $q1 <=# $q2 |]
+translateCompOpU t EQU q1 q2 = [| $(wrapValue t q1) == $(wrapValue t q2) |]
+translateCompOpU t NEQ q1 q2 = [| $(wrapValue t q1) /= $(wrapValue t q2) |]
+translateCompOpU t GTH q1 q2 = [| $(wrapValue t q1) >  $(wrapValue t q2) |]
+translateCompOpU t LTH q1 q2 = [| $(wrapValue t q1) <  $(wrapValue t q2) |]
+translateCompOpU t GEQ q1 q2 = [| $(wrapValue t q1) >= $(wrapValue t q2) |]
+translateCompOpU t LEQ q1 q2 = [| $(wrapValue t q1) <= $(wrapValue t q2) |]
 
-translateTypeConst :: TypeConst -> Q TH.Type
-translateTypeConst TInt = [t| Int |]
-translateTypeConst TInt64 = [t| Int64 |]
-translateTypeConst TWord = [t| Word |]
-translateTypeConst TWord64 = [t| Word64 |]
-translateTypeConst TFloat = [t| Float |]
-translateTypeConst TDouble =  [t| Double |]
-translateTypeConst TBool = [t| Bool |]
-translateTypeConst TUnit = [t| () |]
+--boxed to unboxed
+unwrap :: Type -> Q Exp -> Q Exp
+unwrap (TConst tc)     e = unwrapPrim tc e
+unwrap t@(TFun t1 t2)  e = unwrapFun t e
+unwrap t@(TTup2 t1 t2) e = letE [valD (return (typeToPatternB "w" t)) (normalB e) []] (wrapVar "w" t)
+unwrap t@(TTupN ts)    e = letE [valD (return (typeToPatternB "w" t)) (normalB e) []] (wrapVar "w" t)
+unwrap t               e = e
 
-translateType :: Type -> Q TH.Type
-translateType (TConst tc) = translateTypeConst tc
-translateType (TFun  t1 t2) = [t| $(translateType t1) -> $(translateType t2) |]
-translateType (TTup2 t1 t2) = [t| ($(translateType t1), $(translateType t2)) |]
-translateType (TTupN ts) = foldl appT (tupleT $ length ts) (map translateType ts)
-translateType (TMArr t) = [t| IOUArray Int $(translateType t) |]
-translateType (TIArr t) = [t| UArray Int $(translateType t) |]
-translateType (TIO   t) = [t| IO $(translateType t) |]
+unwrapVar :: String -> Type -> Q Exp
+unwrapVar b (TTup2 t1 t2)  = unboxedTupE [unwrapVar (b ++ "_0") t1, unwrapVar (b ++ "_1") t2]
+unwrapVar b (TTupN ts)     = unboxedTupE $ zipWith unwrapVar bs ts
+  where bs = map (\i -> b ++ "_" ++ show i) [0..length ts] 
+unwrapVar b t@(TFun t1 t2) = unwrapFun t (varE (mkName b))
+unwrapVar b (TConst TBool) = varE (mkName b)
+unwrapVar b (TConst TUnit) = varE (mkName b)
+unwrapVar b (TConst tc)    = varE (mkName b)
+unwrapVar b t              = varE (mkName b)
+
+unwrapFun :: Type -> Q Exp -> Q Exp
+unwrapFun t e = lamE (map return (concat (zipWith flatPat ws args)))
+                  (appsE (e : map return (zipWith typeToExpB ws args)))
+  where ws = map (("wa"++) . show) [0..]
+        (args, r) = argsAndResult t
+
+unwrapPrim :: TypeConst -> Q Exp -> Q Exp
+unwrapPrim TInt    e = [| case $e of (I# i) -> i|]
+unwrapPrim TInt64  e = [| case $e of (I# i) -> i|]
+unwrapPrim TWord   e = [| case $e of (W# i) -> i|]
+unwrapPrim TWord64 e = [| case $e of (W# i) -> i|]
+unwrapPrim TDouble e = [| case $e of (D# i) -> i|]
+unwrapPrim TFloat  e = [| case $e of (F# i) -> i|]
+unwrapPrim t       e = e
+
+-- unboxed to boxed
+wrapValue :: Type -> Q Exp -> Q Exp
+wrapValue (TConst tc)     e = wrapPrim tc e
+wrapValue t@(TFun t1 t2)  e = wrapFun t e
+wrapValue t@(TTup2 t1 t2) e = letE [valD (return (typeToPattern "w" t)) (normalB e) []] (wrapVar "w" t)
+wrapValue t@(TTupN ts)    e = letE [valD (return (typeToPattern "w" t)) (normalB e) []] (wrapVar "w" t)
+wrapValue t               e = e
+
+wrapVar :: String -> Type -> Q Exp
+wrapVar b (TTup2 t1 t2)  = tupE [wrapVar (b ++ "_0") t1, wrapVar (b ++ "_1") t2]
+wrapVar b (TTupN ts)     = tupE $ zipWith wrapVar bs ts
+  where bs = map (\i -> b ++ "_" ++ show i) [0..length ts] 
+wrapVar b t@(TFun t1 t2) = wrapFun t (varE (mkName b))
+wrapVar b (TConst tc)    = wrapPrim tc (varE (mkName b))
+wrapVar b t              = varE (mkName b)
+
+wrapFun :: Type -> Q Exp -> Q Exp
+wrapFun t e = lamE (map return (zipWith typeToPatternB ws args))
+                (appsE (e : (map return $ concat $ zipWith flatApp ws args)))
+  where ws = map (("wa"++) . show) [0..]
+        (args, r) = argsAndResult t
+
+argsAndResult :: Type -> ([Type],Type)
+argsAndResult (TFun t1 t2) = (t1:args, r)
+  where (args, r) = argsAndResult t2
+argsAndResult t = ([], t)
+
+wrapPrim :: TypeConst -> Q Exp -> Q Exp
+wrapPrim TInt    e = [| I# $e |]
+wrapPrim TInt64  e = [| I# $e |]
+wrapPrim TWord   e = [| W# $e |]
+wrapPrim TWord64 e = [| W# $e |]
+wrapPrim TDouble e = [| D# $e |]
+wrapPrim TFloat  e = [| F# $e |]
+wrapPrim tc      e = e
+

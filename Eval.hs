@@ -24,63 +24,6 @@ import Prelude		as P
 
 import Control.DeepSeq
 
-import MaybeNF
-import GenInstance
-
-instance MaybeNF (a -> b) where
-  maybeDeepSeq = flip const
-
-instance MaybeNF (UArray Int a) where
-  maybeDeepSeq = seq
-
-instance MaybeNF (IOUArray Int a) where
-  maybeDeepSeq = seq
-
-instance MaybeNF (IO a) where
-  maybeDeepSeq = flip const --seq
-
-instance MaybeNF Bool where
-  maybeDeepSeq = seq
-
-instance MaybeNF Int where
-  maybeDeepSeq = seq
-
-instance MaybeNF Word where
-  maybeDeepSeq = seq
-
-instance MaybeNF Int64 where
-  maybeDeepSeq = seq
-
-instance MaybeNF Word64 where
-  maybeDeepSeq = seq
-
-instance MaybeNF Float where
-  maybeDeepSeq = seq
-
-instance MaybeNF Double where
-  maybeDeepSeq = seq
-
-instance MaybeNF () where
-  maybeDeepSeq = seq
-
-deriveMaybeNFTups 36
-
-{-
-instance (MaybeNF a, MaybeNF b) => MaybeNF (a, b) where
-  maybeDeepSeq (a,b) x = a `maybeDeepSeq` b `maybeDeepSeq` x
-
-instance (MaybeNF a, MaybeNF b, MaybeNF c) => MaybeNF (a, b, c) where
-  maybeDeepSeq (a,b,c) x = a `maybeDeepSeq` b `maybeDeepSeq` c `maybeDeepSeq` x
-
-instance (MaybeNF a, MaybeNF b, MaybeNF c,
-          MaybeNF d, MaybeNF e, MaybeNF f,
-          MaybeNF g, MaybeNF h, MaybeNF i) =>
-    MaybeNF (a, b, c, d, e, f, g, h, i) where
- maybeDeepSeq (a, b, c, d, e, f, g, h, i) x =
-  a `maybeDeepSeq` b `maybeDeepSeq` c `maybeDeepSeq`
-  d `maybeDeepSeq` e `maybeDeepSeq` f `maybeDeepSeq`
-  g `maybeDeepSeq` h `maybeDeepSeq` i `maybeDeepSeq` x
--}
 
 while cond step init = loop init
   where loop s | cond s = loop (step s)
@@ -99,8 +42,8 @@ whileM cond step action init
     in loop init
 {-# INLINE [0] whileM #-}
 
-parM :: Int -> (Int -> IO ()) -> IO ()
-parM (I# n) action = gangIO theGang $
+parM :: Int# -> (Int# -> IO ()) -> IO ()
+parM n action = gangIO theGang $
   \(I# thread) ->
     let !start   = splitIx thread
         !end     = splitIx (thread +# 1#)
@@ -117,7 +60,7 @@ parM (I# n) action = gangIO theGang $
         {-# INLINE run #-}
         run !ix !end | ix >=# end = return ()
                      | otherwise  =
-          do action (I# ix)
+          do action ix
              run (ix +# 1#) end
 {-# INLINE [0] parM #-}
 

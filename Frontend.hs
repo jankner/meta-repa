@@ -37,47 +37,47 @@ infixr 3 &&
 infixr 2 ||
 
 
-(==) :: Eq a => Expr a -> Expr a -> Expr Bool
-a == b = Equal a b
+(==) :: (Eq a, Typeable a) => Expr a -> Expr a -> Expr Bool
+a == b = Equal typeOf0 a b
 
-(/=) :: Eq a => Expr a -> Expr a -> Expr Bool
-a /= b = NotEqual a b
+(/=) :: (Eq a, Typeable a) => Expr a -> Expr a -> Expr Bool
+a /= b = NotEqual typeOf0 a b
 
-(<) :: Ord a => Expr a -> Expr a -> Expr Bool
-a < b = LTH a b
+(<) :: (Ord a, Typeable a) => Expr a -> Expr a -> Expr Bool
+a < b = LTH typeOf0 a b
 
-(>) :: Ord a => Expr a -> Expr a -> Expr Bool
-a > b = GTH a b
+(>) :: (Ord a, Typeable a) => Expr a -> Expr a -> Expr Bool
+a > b = GTH typeOf0 a b
 
-(<=) :: Ord a => Expr a -> Expr a -> Expr Bool
-a <= b = LTE a b
+(<=) :: (Ord a, Typeable a) => Expr a -> Expr a -> Expr Bool
+a <= b = LTE typeOf0 a b
 
-(>=) :: Ord a => Expr a -> Expr a -> Expr Bool
-a >= b = GTE a b
+(>=) :: (Ord a, Typeable a) => Expr a -> Expr a -> Expr Bool
+a >= b = GTE typeOf0 a b
 
-max :: Ord a => Expr a -> Expr a -> Expr a
-max = Binop Max
+max :: (Ord a, Typeable a) => Expr a -> Expr a -> Expr a
+max = Binop typeOf0 Max
 
-min :: Ord a => Expr a -> Expr a -> Expr a
-min = Binop Min
+min :: (Ord a, Typeable a) => Expr a -> Expr a -> Expr a
+min = Binop typeOf0 Min
 
 (&&) :: Expr Bool -> Expr Bool -> Expr Bool
-(&&) = Binop And
+(&&) = Binop typeOf0 And
 
 (||) :: Expr Bool -> Expr Bool -> Expr Bool
-(||) = Binop Or
+(||) = Binop typeOf0 Or
 
-quot :: Integral a => Expr a -> Expr a -> Expr a
-quot = Binop Quot
+quot :: (Integral a, Typeable a) => Expr a -> Expr a -> Expr a
+quot = Binop typeOf0 Quot
 
-rem :: Integral a => Expr a -> Expr a -> Expr a
-rem = Binop Rem
+rem :: (Integral a, Typeable a) => Expr a -> Expr a -> Expr a
+rem = Binop typeOf0 Rem
 
-div :: Integral a => Expr a -> Expr a -> Expr a
-div = Binop Div
+div :: (Integral a, Typeable a) => Expr a -> Expr a -> Expr a
+div = Binop typeOf0 Div
 
-mod :: Integral a => Expr a -> Expr a -> Expr a
-mod = Binop Mod
+mod :: (Integral a, Typeable a) => Expr a -> Expr a -> Expr a
+mod = Binop typeOf0 Mod
 
 true :: Expr Bool
 true = BoolLit P.True
@@ -85,8 +85,8 @@ true = BoolLit P.True
 false :: Expr Bool
 false = BoolLit P.False
 
-fromIntegral :: (Integral a, Num b, Typeable b) => Expr a -> Expr b
-fromIntegral = FromIntegral typeOf0
+fromIntegral :: (Integral a, Num b, Typeable b, Typeable a) => Expr a -> Expr b
+fromIntegral = FromIntegral typeOf0 typeOf0
 
 even :: (Storable a, Integral a) => Expr a -> Expr Bool
 even a = a `rem` 2 == 0

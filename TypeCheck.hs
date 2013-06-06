@@ -214,6 +214,14 @@ infer (If e1 e2 e3) = do
   t3 <- infer e3
   unify t2 t3
   return t2
+infer (Rec e1 e2) = do
+  a <- newTypeVarT
+  r <- newTypeVarT
+  t1 <- infer e1
+  unify t1 ((a --> r) --> a --> r)
+  t2 <- infer e2
+  unify t2 a
+  return r
 infer (IterateWhile e1 e2 e3) = do
   s <- newTypeVarT
   t1 <- infer e1
@@ -392,196 +400,204 @@ occurs v (TTup2 t1 t2) = occurs v t1 || occurs v t2
 occurs v (TFun  t1 t2) = occurs v t1 || occurs v t2
 occurs v (TTupN ts) = foldl1 (||) (map (occurs v) ts)
 
-zonkExpr :: T.Expr -> TC T.Expr
-zonkExpr = T.exprTraverse0 zonkExpr'
+--zonkExpr :: T.Expr -> TC T.Expr
+--zonkExpr = T.exprTraverse0 zonkExpr'
+--
+--zonkExpr' k (T.Lambda v t e) = do
+--  t' <- zonkType t
+--  e' <- zonkExpr' k e
+--  return (T.Lambda v t' e')
+--zonkExpr' k (T.FromIntegral t e) = do
+--  t' <- zonkType t
+--  e' <- zonkExpr' k e
+--  return (T.FromIntegral t' e')
+--zonkExpr' k (T.NewArray t e) = do
+--  t' <- zonkType t
+--  e' <- zonkExpr' k e
+--  return (T.NewArray t' e')
+--zonkExpr' k e | T.isAtomic e = return e
+--              | otherwise    = k e
 
-zonkExpr' k (T.Lambda v t e) = do
-  t' <- zonkType t
-  e' <- zonkExpr' k e
-  return (T.Lambda v t' e')
-zonkExpr' k (T.FromIntegral t e) = do
-  t' <- zonkType t
-  e' <- zonkExpr' k e
-  return (T.FromIntegral t' e')
-zonkExpr' k (T.NewArray t e) = do
-  t' <- zonkType t
-  e' <- zonkExpr' k e
-  return (T.NewArray t' e')
-zonkExpr' k e | T.isAtomic e = return e
-              | otherwise    = k e
-
-inferT :: Expr -> TC (T.Expr,Type)
-inferT e =
-  do (e,t) <- inferT1 e
-     e' <- zonkExpr e
-     t' <- zonkType t
-     return (e',t')
-
-inferT1 :: Expr -> TC (T.Expr,Type)
-inferT1 Skip = return (T.Skip, TIO tUnit)
-inferT1 (Var v) = do
-  t <- lookupVar v
-  return (T.Var v, t)
-inferT1 e@(FromInteger t i)
-  | classMatch CNum (TConst t) = return (T.FromInteger t i, TConst t)
-  | otherwise                  = throwError ((show t) ++ " is not of class Num in expression: " ++ (show e))
-inferT1 e@(FromRational t i)
-  | classMatch CFractional (TConst t)  = return (T.FromRational t i, TConst t)
-  | otherwise                           = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
-inferT1 (FromIntegral tr e) = do
-  (e',t) <- inferT1 e
-  a <- newTVarOfClass CIntegral
-  unify t a
-  return (T.FromIntegral tr e', tr)
-inferT1 (BoolLit b) = return (T.BoolLit b, tBool)
-inferT1 (Unit) = return (T.Unit, tUnit)
-inferT1 (Tup2 e1 e2) = do
-  (e1',t1) <- inferT1 e1
-  (e2',t2) <- inferT1 e2
-  return (T.Tup2 e1' e2', (TTup2 t1 t2))
-inferT1 (Fst e) = do
-  (e',t) <- inferT1 e
-  a <- newTypeVarT
-  b <- newTypeVarT
-  unify2 e t (TTup2 a b)
-  return (T.Fst e', a)
-inferT1 (Snd e) = do
-  (e',t) <- inferT1 e
-  a <- newTypeVarT
-  b <- newTypeVarT
-  unify2 e t (TTup2 a b)
-  return (T.Snd e',b)
-inferT1 (TupN es) = do
-  (es',ts) <- liftM unzip $ mapM inferT1 es
-  return (T.TupN es', TTupN ts)
-inferT1 (GetN n i e) = do
-  (e',t) <- inferT1 e
-  tvs <- sequence (replicate n newTypeVarT)
-  unify2 e t (TTupN tvs)
-  return (T.GetN n i e', tvs !! i)
-inferT1 (Let v e1 e2) = do
-  (e1',t1) <- inferT1 e1
-  (e2',t2) <- addVar v t1 $ inferT1 e2
-  return (T.Let v e1' e2', t2)
-inferT1 (UnOp op e) = do
-  (e',t) <- inferT1 e
-  a <- typeFromUnOp op
-  unify2 e t a
-  return (e',t)
-inferT1 (BinOp op e1 e2) = do
-  (e1',t1) <- inferT1 e1
-  a <- typeFromBinOp op
-  unify2 e1 t1 a
-  (e2',t2) <- inferT1 e2
-  unify2 e2 t2 a
-  return (T.BinOp op e1' e2', t2)
-inferT1 (Compare op e1 e2) = do
-  (e1',t1) <- inferT1 e1
-  a <- typeFromCompOp op
-  unify2 e1 t1 a
-  (e2',t2) <- inferT1 e2
-  unify2 e2 t2 a
-  return (T.Compare op e1' e2', tBool)
-inferT1 (App e1 e2) = do
-  (e1',t1) <- inferT1 e1
-  (e2',t2) <- inferT1 e2
-  a <- newTypeVarT
-  b <- newTypeVarT
-  unify2 e1 t1 (a --> b)
-  unify2 e2 t2 a
-  return (T.App e1' e2', b)
-inferT1 (Lambda v t e) = do
-  a <- newTypeVarT
-  (e', t') <- addVar v a $ inferT1 e
-  unify t a
-  return (T.Lambda v a e', a --> t')
-inferT1 (Return e) = do
-  (e', t) <- inferT1 e
-  return (T.Return e', TIO t)
-inferT1 (Bind e1 e2) = do
-  (e1', t1) <- inferT1 e1
-  a <- newTypeVarT
-  unify2 e1 t1 (TIO a)
-  (e2', t2) <- inferT1 e2
-  b <- newTypeVarT
-  unify2 e2 t2 (a --> TIO b)
-  return (T.Bind e1' e2', TIO b)
-inferT1 (ParM e1 e2) = do
-  (e1', t1) <- inferT1 e1
-  unify2 e1 t1 tInt
-  (e2', t2) <- inferT1 e2
-  unify2 e2 t2 (tInt --> (TIO tUnit))
-  return (T.ParM e1' e2', TIO tUnit)
-inferT1 (If e1 e2 e3) = do
-  (e1',t1) <- inferT1 e1
-  unify t1 tBool
-  (e2',t2) <- inferT1 e2
-  (e3',t3) <- inferT1 e3
-  unify t2 t3
-  return (T.If e1' e2' e3', t2)
-inferT1 (IterateWhile e1 e2 e3) = do
-  s <- newTypeVarT
-  (e1', t1) <- inferT1 e1
-  unify2 e1 t1 (s --> tBool)
-  (e2', t2) <- inferT1 e2
-  unify2 e2 t2 (s --> s)
-  (e3', t3) <- inferT1 e3
-  unify2 e3 t3 s
-  return (T.IterateWhile e1' e2' e3', s)
-inferT1 (WhileM e1 e2 e3 e4) = do
-  s <- newTypeVarT
-  (e1', t1) <- inferT1 e1
-  unify2 e1 t1 (s --> tBool)
-  (e2', t2) <- inferT1 e2
-  unify2 e2 t2 (s --> s)
-  (e3', t3) <- inferT1 e3
-  unify2 e3 t3 (s --> TIO tUnit)
-  (e4', t4) <- inferT1 e4
-  unify2 e4 t4 s
-  return (T.WhileM e1' e2' e3' e4', TIO tUnit)
-inferT1 (RunMutableArray e) = do
-  (e', t) <- inferT1 e
-  a <- newTypeVarT
-  unify2 e t (TIO (TMArr a))
-  return (T.RunMutableArray e', TIArr a)
-inferT1 (ReadIArray e1 e2) = do
-  (e1', t1) <- inferT1 e1
-  a <- newTypeVarT
-  unify2 e1 t1 (TIArr a)
-  (e2', t2) <- inferT1 e2
-  unify2 e2 t2 tInt
-  return (T.ReadIArray e1' e2', a)
-inferT1 (ArrayLength e) = do
-  (e', t) <- inferT1 e
-  a <- newTypeVarT
-  unify2 e t (TIArr a)
-  return (T.ArrayLength e', tInt)
-inferT1 (NewArray e) = do
-  (e', t) <- inferT1 e
-  a <- newTypeVarT
-  unify2 e t tInt
-  return (T.NewArray a e', TIO (TMArr a))
-inferT1 (ReadArray e1 e2) = do
-  (e1', t1) <- inferT1 e1
-  a <- newTypeVarT
-  unify2 e1 t1 (TMArr a)
-  (e2', t2) <- inferT1 e2
-  unify2 e2 t2 tInt
-  return (T.ReadArray e1' e2', TIO a)
-inferT1 (WriteArray e1 e2 e3) = do
-  (e1', t1) <- inferT1 e1
-  a <- newTypeVarT
-  unify2 e1 t1 (TMArr a)
-  (e2', t2) <- inferT1 e2
-  unify2 e2 t2 tInt
-  (e3', t3) <- inferT1 e3
-  unify2 e3 t3 a
-  return (T.WriteArray e1' e2' e3', TIO tUnit)
-inferT1 (Print e) = do
-  a <- newTVarOfClass CShow
-  (e', t) <- inferT1 e
-  unify2 e t a
-  return (T.Print e', TIO tUnit)
+--inferT :: Expr -> TC (T.Expr,Type)
+--inferT e =
+--  do (e,t) <- inferT1 e
+--     e' <- zonkExpr e
+--     t' <- zonkType t
+--     return (e',t')
+--
+--inferT1 :: Expr -> TC (T.Expr,Type)
+--inferT1 Skip = return (T.Skip, TIO tUnit)
+--inferT1 (Var v) = do
+--  t <- lookupVar v
+--  return (T.Var v, t)
+--inferT1 e@(FromInteger t i)
+--  | classMatch CNum (TConst t) = return (T.FromInteger t i, TConst t)
+--  | otherwise                  = throwError ((show t) ++ " is not of class Num in expression: " ++ (show e))
+--inferT1 e@(FromRational t i)
+--  | classMatch CFractional (TConst t)  = return (T.FromRational t i, TConst t)
+--  | otherwise                           = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
+--inferT1 (FromIntegral tr e) = do
+--  (e',t) <- inferT1 e
+--  a <- newTVarOfClass CIntegral
+--  unify t a
+--  return (T.FromIntegral tr e', tr)
+--inferT1 (BoolLit b) = return (T.BoolLit b, tBool)
+--inferT1 (Unit) = return (T.Unit, tUnit)
+--inferT1 (Tup2 e1 e2) = do
+--  (e1',t1) <- inferT1 e1
+--  (e2',t2) <- inferT1 e2
+--  return (T.Tup2 e1' e2', (TTup2 t1 t2))
+--inferT1 (Fst e) = do
+--  (e',t) <- inferT1 e
+--  a <- newTypeVarT
+--  b <- newTypeVarT
+--  unify2 e t (TTup2 a b)
+--  return (T.Fst e', a)
+--inferT1 (Snd e) = do
+--  (e',t) <- inferT1 e
+--  a <- newTypeVarT
+--  b <- newTypeVarT
+--  unify2 e t (TTup2 a b)
+--  return (T.Snd e',b)
+--inferT1 (TupN es) = do
+--  (es',ts) <- liftM unzip $ mapM inferT1 es
+--  return (T.TupN es', TTupN ts)
+--inferT1 (GetN n i e) = do
+--  (e',t) <- inferT1 e
+--  tvs <- sequence (replicate n newTypeVarT)
+--  unify2 e t (TTupN tvs)
+--  return (T.GetN n i e', tvs !! i)
+--inferT1 (Let v e1 e2) = do
+--  (e1',t1) <- inferT1 e1
+--  (e2',t2) <- addVar v t1 $ inferT1 e2
+--  return (T.Let v e1' e2', t2)
+--inferT1 (UnOp op e) = do
+--  (e',t) <- inferT1 e
+--  a <- typeFromUnOp op
+--  unify2 e t a
+--  return (e',t)
+--inferT1 (BinOp op e1 e2) = do
+--  (e1',t1) <- inferT1 e1
+--  a <- typeFromBinOp op
+--  unify2 e1 t1 a
+--  (e2',t2) <- inferT1 e2
+--  unify2 e2 t2 a
+--  return (T.BinOp op e1' e2', t2)
+--inferT1 (Compare op e1 e2) = do
+--  (e1',t1) <- inferT1 e1
+--  a <- typeFromCompOp op
+--  unify2 e1 t1 a
+--  (e2',t2) <- inferT1 e2
+--  unify2 e2 t2 a
+--  return (T.Compare op e1' e2', tBool)
+--inferT1 (App e1 e2) = do
+--  (e1',t1) <- inferT1 e1
+--  (e2',t2) <- inferT1 e2
+--  a <- newTypeVarT
+--  b <- newTypeVarT
+--  unify2 e1 t1 (a --> b)
+--  unify2 e2 t2 a
+--  return (T.App e1' e2', b)
+--inferT1 (Lambda v t e) = do
+--  a <- newTypeVarT
+--  (e', t') <- addVar v a $ inferT1 e
+--  unify t a
+--  return (T.Lambda v a e', a --> t')
+--inferT1 (Return e) = do
+--  (e', t) <- inferT1 e
+--  return (T.Return e', TIO t)
+--inferT1 (Bind e1 e2) = do
+--  (e1', t1) <- inferT1 e1
+--  a <- newTypeVarT
+--  unify2 e1 t1 (TIO a)
+--  (e2', t2) <- inferT1 e2
+--  b <- newTypeVarT
+--  unify2 e2 t2 (a --> TIO b)
+--  return (T.Bind e1' e2', TIO b)
+--inferT1 (ParM e1 e2) = do
+--  (e1', t1) <- inferT1 e1
+--  unify2 e1 t1 tInt
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 (tInt --> (TIO tUnit))
+--  return (T.ParM e1' e2', TIO tUnit)
+--inferT1 (If e1 e2 e3) = do
+--  (e1',t1) <- inferT1 e1
+--  unify t1 tBool
+--  (e2',t2) <- inferT1 e2
+--  (e3',t3) <- inferT1 e3
+--  unify t2 t3
+--  return (T.If e1' e2' e3', t2)
+--inferT1 (Rec e1 e2) = do
+--  a <- newTypeVarT
+--  r <- newTypeVarT
+--  (e1', t1) <- inferT1 e1
+--  unify2 e1 t1 ((a --> r) --> a --> r)
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 a
+--  return (T.Rec e1' e2', r)
+--inferT1 (IterateWhile e1 e2 e3) = do
+--  s <- newTypeVarT
+--  (e1', t1) <- inferT1 e1
+--  unify2 e1 t1 (s --> tBool)
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 (s --> s)
+--  (e3', t3) <- inferT1 e3
+--  unify2 e3 t3 s
+--  return (T.IterateWhile e1' e2' e3', s)
+--inferT1 (WhileM e1 e2 e3 e4) = do
+--  s <- newTypeVarT
+--  (e1', t1) <- inferT1 e1
+--  unify2 e1 t1 (s --> tBool)
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 (s --> s)
+--  (e3', t3) <- inferT1 e3
+--  unify2 e3 t3 (s --> TIO tUnit)
+--  (e4', t4) <- inferT1 e4
+--  unify2 e4 t4 s
+--  return (T.WhileM e1' e2' e3' e4', TIO tUnit)
+--inferT1 (RunMutableArray e) = do
+--  (e', t) <- inferT1 e
+--  a <- newTypeVarT
+--  unify2 e t (TIO (TMArr a))
+--  return (T.RunMutableArray e', TIArr a)
+--inferT1 (ReadIArray e1 e2) = do
+--  (e1', t1) <- inferT1 e1
+--  a <- newTypeVarT
+--  unify2 e1 t1 (TIArr a)
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 tInt
+--  return (T.ReadIArray e1' e2', a)
+--inferT1 (ArrayLength e) = do
+--  (e', t) <- inferT1 e
+--  a <- newTypeVarT
+--  unify2 e t (TIArr a)
+--  return (T.ArrayLength e', tInt)
+--inferT1 (NewArray e) = do
+--  (e', t) <- inferT1 e
+--  a <- newTypeVarT
+--  unify2 e t tInt
+--  return (T.NewArray a e', TIO (TMArr a))
+--inferT1 (ReadArray e1 e2) = do
+--  (e1', t1) <- inferT1 e1
+--  a <- newTypeVarT
+--  unify2 e1 t1 (TMArr a)
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 tInt
+--  return (T.ReadArray e1' e2', TIO a)
+--inferT1 (WriteArray e1 e2 e3) = do
+--  (e1', t1) <- inferT1 e1
+--  a <- newTypeVarT
+--  unify2 e1 t1 (TMArr a)
+--  (e2', t2) <- inferT1 e2
+--  unify2 e2 t2 tInt
+--  (e3', t3) <- inferT1 e3
+--  unify2 e3 t3 a
+--  return (T.WriteArray e1' e2' e3', TIO tUnit)
+--inferT1 (Print e) = do
+--  a <- newTVarOfClass CShow
+--  (e', t) <- inferT1 e
+--  unify2 e t a
+--  return (T.Print e', TIO tUnit)
 
 unify2 e t1 t2 =
   catchError (unify t1 t2) (\err ->
@@ -592,6 +608,23 @@ newtype TC2 a = TC2 { unTC2 :: ErrorT String (Reader Env) a }
 
 runTC2 m = runReader (runErrorT (unTC2 m)) []
 
+runTC2' m env = runReader (runErrorT (unTC2 m)) env
+
+annotate :: T.Expr -> TC2 T.Expr
+annotate = T.exprTraverse0 annotate' 
+
+annotate' :: (T.Expr -> TC2 T.Expr) -> T.Expr -> TC2 T.Expr
+annotate' k (T.Let v e1 e2) = do
+  t <- inferT2 e1
+  e1' <- annotate' k e1
+  e2' <- addVar v t $ annotate' k e2
+  return $ T.LetAnn v t e1' e2'
+annotate' k (T.Lambda v t0@(TFun t _) e) = do
+  e' <- addVar v t $ annotate' k e
+  return $ T.Lambda v t0 e'
+annotate' k e | T.isAtomic e = return e
+              | otherwise    = k e
+
 inferT2 :: T.Expr -> TC2 Type
 inferT2 T.Skip = return (TIO tUnit)
 inferT2 (T.Var v) = lookupVar v
@@ -601,22 +634,22 @@ inferT2 e@(T.FromInteger t i)
 inferT2 e@(T.FromRational t r)
   | classMatch CFractional (TConst t) = return (TConst t)
   | otherwise                         = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
-inferT2 (T.FromIntegral tr e) = do
+inferT2 (T.FromIntegral tr s e) = do
   t <- inferT2 e
   unless (classMatch CIntegral t) $
     throwError ("argument of fromIntegral must be of class Integral in expression " ++ (show e) ++ ". actual type: " ++ (show t))
   unless (classMatch CNum tr) $
-    throwError ("result type of fromIntegral must be of class Num in expression " ++ (show (T.FromIntegral tr e)) ++ ". actual type: " ++ (show tr))
+    throwError ("result type of fromIntegral must be of class Num in expression " ++ (show (T.FromIntegral tr s e)) ++ ". actual type: " ++ (show tr))
   return tr
 inferT2 (T.BoolLit b) = return tBool
 inferT2 (T.Unit) = return tUnit
 inferT2 (T.Tup2 e1 e2) = liftM2 TTup2 (inferT2 e1) (inferT2 e2)
-inferT2 (T.Fst e) = do
+inferT2 (T.Fst _ e) = do
   t <- inferT2 e
   case t of
     TTup2 t1 t2 -> return t1
     t' -> throwError ("expected tuple, actual type: " ++ (show t'))
-inferT2 (T.Snd e) = do
+inferT2 (T.Snd _ e) = do
   t <- inferT2 e
   case t of
     TTup2 t1 t2 -> return t2
@@ -624,32 +657,36 @@ inferT2 (T.Snd e) = do
 inferT2 (T.TupN es) = do
   ts <- mapM inferT2 es
   return (TTupN ts)
-inferT2 (T.GetN n i e) = do
+inferT2 (T.GetN _ i e) = do
   t <- inferT2 e
   case t of
-    TTupN ts | length ts == n -> return (ts !! i)
-    t' -> throwError("expected tuple of size " ++ (show n) ++ ". actual type: " ++ (show t'))
+    TTupN ts -> return (ts !! i)
+--    t' -> throwError("expected tuple of size " ++ (show n) ++ ". actual type: " ++ (show t'))
 inferT2 (T.Let v e1 e2) = do
   t1 <- inferT2 e1
   t2 <- addVar v t1 $ inferT2 e2
   return t2
-inferT2 (T.UnOp op e) = do
+inferT2 (T.LetAnn v _ e1 e2) = do
+  t1 <- inferT2 e1
+  t2 <- addVar v t1 $ inferT2 e2
+  return t2
+inferT2 (T.UnOp _ op e) = do
   t <- inferT2 e
   checkUnOp op t
   return t
-inferT2 (T.BinOp op e1 e2) = do
+inferT2 (T.BinOp _ op e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   when (t1 /= t2) $ throwError ("binop with operands of different type: " ++ (show t1) ++ " " ++ (show op) ++ " " ++ (show t2))
   checkBinOp op t1
   return t1
-inferT2 (T.Compare op e1 e2) = do
+inferT2 (T.Compare _ op e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   when (t1 /= t2) $ throwError ("compop with operands of different type: " ++ (show t1) ++ " " ++ (show op) ++ " " ++ (show t2))
   checkCompOp op t1
   return tBool
-inferT2 (T.App e1 e2) = do
+inferT2 (T.App e1 _ e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   case t1 of
@@ -657,18 +694,18 @@ inferT2 (T.App e1 e2) = do
       do matchType2 e2 t2 a
          return b
     _ -> throwError ("application to non-function expression: " ++ (show e1) ++ " :: " ++ (show t2))
-inferT2 (T.Lambda v t e) = liftM (t -->) (addVar v t $ inferT2 e)
-inferT2 (T.Return e) = do
+inferT2 (T.Lambda v (TFun t1 t2) e) = liftM (t1 -->) (addVar v t1 $ inferT2 e)
+inferT2 (T.Return _ e) = do
   t <- inferT2 e
   return (TIO t)
-inferT2 e@(T.Bind e1 e2) = do
+inferT2 e@(T.Bind _ e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   case (t1,t2) of
     (TIO a, TFun a' (TIO b)) ->
       do matchType2 e a a'
          return (TIO b)
-    _ -> throwError ((show e) ++ " ohno " ++ (show e1) ++ " :: " ++ (show t1) ++ " \n " ++ (show e2) ++ " :: "  ++ (show t2))
+    _ -> throwError ((show e) ++ "\n ohno " ++ (show e1) ++ " :: " ++ (show t1) ++ " \n " ++ (show e2) ++ " :: "  ++ (show t2))
 inferT2 (T.ParM e1 e2) = do
   t1 <- inferT2 e1
   when (t1 /= tInt) $ throwError "first argument of parM must be of type Int."
@@ -682,14 +719,21 @@ inferT2 (T.If e1 e2 e3) = do
   matchType2 e1 t1 tBool
   when (t2 /= t3) $ throwError ("types of branches in conditionals do not match: " ++ (show e1) ++ " :: " ++ (show t1) ++ " \n " ++ (show e2) ++ " :: "  ++ (show t2))
   return t2
-inferT2 (T.IterateWhile e1 e2 e3) = do
+inferT2 (T.Rec _ e1 e2) = do
+  t1 <- inferT2 e1
+  t2 <- inferT2 e2
+  case t1 of 
+    TFun (TFun a1 r1) (TFun a2 r2) 
+      | a1 == a2 && r1 == r2 && t2 == a1 -> return r1
+    _ -> throwError "type error in rec"
+inferT2 (T.IterateWhile _ e1 e2 e3) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   t3 <- inferT2 e3
   matchType2 e1 t1 (t3 --> tBool)
   matchType2 e2 t2 (t3 --> t3)
   return t3
-inferT2 (T.WhileM e1 e2 e3 e4) = do
+inferT2 (T.WhileM _ e1 e2 e3 e4) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   t3 <- inferT2 e3
@@ -703,7 +747,7 @@ inferT2 (T.RunMutableArray e) = do
   case t of
     TIO (TMArr a) -> return (TIArr a)
     _ -> throwError ("first argument of runMutableArray is not of type IO {a}. actual type: " ++ (show t))
-inferT2 (T.ReadIArray e1 e2) = do
+inferT2 (T.ReadIArray _ e1 e2) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   matchType2 e2 t2 tInt
@@ -726,7 +770,7 @@ inferT2 e@(T.ReadArray e1 e2) = do
   case t1 of
     TMArr a -> return (TIO a)
     _ -> throwError ("first argument of readArray is not of type {a}. actual type: " ++ (show t1))
-inferT2 (T.WriteArray e1 e2 e3) = do
+inferT2 (T.WriteArray _ e1 e2 e3) = do
   t1 <- inferT2 e1
   t2 <- inferT2 e2
   t3 <- inferT2 e3
