@@ -443,7 +443,7 @@ undoSome' map k (Let v e1 e2) =
     do e1' <- undoSome' map k e1
        b' <- reader snd
        case IM.lookup v map of
-         Just (b,c) | b /= 0x3fffffff && c <= 1 && b == b' || not (worthIt 1 e1') ->
+         Just (b,c) | b /= 0x3fffffff && c <= 1 && b == b' || not (worthIt 2 e1') ->
            do e2' <- local (first $ IM.insert v e1') $ undoSome' map k e2
               return e2'
          _ -> 
@@ -453,18 +453,27 @@ undoSome' map k e | isAtomic e = return e
                   | otherwise  = k e
 
 worthIt :: Int -> Expr -> Bool
-worthIt i e | isAtomic e = False
-worthIt 0 e              = True
-worthIt i (Tup2 e1 e2)       = worthIt (i-1) e1 || worthIt (i-1) e2
-worthIt i (BinOp op e1 e2)   = worthIt (i-1) e1 || worthIt (i-1) e2
-worthIt i (Compare op e1 e2) = worthIt (i-1) e1 || worthIt (i-1) e2
-worthIt i (UnOp op e)        = worthIt (i-1) e
-worthIt i (FromIntegral t e) = worthIt (i-1) e
-worthIt i (Fst e)            = worthIt (i-1) e
-worthIt i (Snd e)            = worthIt (i-1) e
-worthIt i (Return e)         = worthIt (i-1) e
-worthIt i (NewArray t e)     = worthIt i e
-worthIt i e = True
+worthIt i (ParM _ _)     = True
+worthIt i (IterateWhile _ _ _ _) = True
+worthIt i (WhileM _ _ _ _ _) = True
+worthIt i (Rec _ _ _) = True
+worthIt i (RunMutableArray _) = True
+worthIt i e = False
+
+--worthIt :: Int -> Expr -> Bool
+--worthIt i e | isAtomic e = False
+--worthIt 0 e              = True
+--worthIt i (Tup2 e1 e2)         = worthIt (i-2) e1 || worthIt (i-2) e2
+--worthIt i (BinOp t op e1 e2)   = worthIt (i-1) e1 || worthIt (i-1) e2
+--worthIt i (Compare t op e1 e2) = worthIt (i-1) e1 || worthIt (i-1) e2
+--worthIt i (UnOp t op e)        = worthIt (i-1) e
+--worthIt i (FromIntegral t s e) = worthIt (i-2) e
+--worthIt i (Fst t e)            = worthIt (i-0) e
+--worthIt i (Snd t e)            = worthIt (i-0) e
+--worthIt i (GetN _ _ e)         = worthIt (i-0) e 
+--worthIt i (Return t e)         = worthIt (i-1) e
+--worthIt i (NewArray t e)       = worthIt i e
+--worthIt i e = True
 
 
 findMin :: IS.IntSet -> Maybe Int
