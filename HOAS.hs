@@ -19,6 +19,7 @@ import Data.Int
 import Data.Word
 import Data.List
 import Data.Maybe
+import Data.Bits (Bits)
 
 import Control.Arrow
 import Control.Monad
@@ -241,6 +242,11 @@ data Expr a where
   FromInteger :: Num a => TypeConst a -> Integer -> Expr a
   FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
   FromIntegral :: (Integral a, Num b) => Type b -> Type a -> Expr a -> Expr b
+  Complement :: Bits a => Type a -> Expr a -> Expr a
+  Bit :: Bits a => Type a -> Expr Int -> Expr a
+  Rotate :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
+  ShiftL :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
+  ShiftR :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
 
   BoolLit :: Bool -> Expr Bool
 
@@ -300,6 +306,9 @@ data Binop a where
   FDiv  :: Fractional a => Binop a
   And   :: Binop Bool
   Or    :: Binop Bool
+  Xor   :: Bits a => Binop a
+  BAnd  :: Bits a => Binop a
+  BOr   :: Bits a => Binop a
 
 deriving instance Eq (Binop a)
 
@@ -323,6 +332,34 @@ instance (Storable a, Fractional a) => Fractional (Expr a) where
   (/) = Binop (TConst (typeConstOf0)) FDiv
   recip = Recip (TConst (typeConstOf0))
   fromRational = FromRational typeConstOf0
+
+--instance Bits a => Bits (Expr a) where
+(.&.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+a .&. b = Binop typeOf0 BAnd a b
+
+(.|.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+a .|. b = Binop typeOf0 BOr a b
+
+xor :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+xor a b = Binop typeOf0 Xor a b
+
+⊕ :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+a ⊕ b   = Binop typeOf0 Xor a b
+
+complement :: (Typeable a, Bits a) => Expr a -> Expr a
+complement a = Complement typeOf0 a
+
+bit :: (Typeable a, Bits a) => Expr Int -> Expr a
+bit i = Bit typeOf0 i  
+
+rotate :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
+rotate a i = Rotate typeOf0 a i
+
+(.<<.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
+a .<<. i = ShiftL typeOf0 a i
+
+(.>>.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
+a .>>. i = ShiftR typeOf0 a i
 
 getN :: (TupTypeable t, Get n t Expr b) => n -> Expr (t Id) -> Expr b
 getN n et = GetN typeOf0 n et

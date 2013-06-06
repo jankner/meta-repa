@@ -14,6 +14,7 @@ import Data.Array.MArray hiding (unsafeFreeze)
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Data.Array.Unsafe
+import Data.Bits
 
 import Data.Int
 import Data.Word
@@ -965,6 +966,12 @@ translateBinOpU (TConst TInt)    Rem   q1 q2 = [| remInt#   $q1 $q2 |]
 translateBinOpU (TConst TWord)   Rem   q1 q2 = [| remWord#  $q1 $q2 |]
 translateBinOpU (TConst TFloat)  FDiv  q1 q2 = [| divideFloat# $q1 $q2 |]
 translateBinOpU (TConst TDouble) FDiv  q1 q2 = [| $q1 /## $q2 |]
+translateBinOpU (TConst TWord)   Xor   q1 q2 = [| xor#  $q1 $q2 |]
+translateBinOpU (TConst TWord64) Xor   q1 q2 = [| xor#  $q1 $q2 |]
+translateBinOpU (TConst TWord)   BAnd  q1 q2 = [| and#  $q1 $q2 |]
+translateBinOpU (TConst TWord64) BAnd  q1 q2 = [| and#  $q1 $q2 |]
+translateBinOpU (TConst TWord)   BOr   q1 q2 = [| or#  $q1 $q2 |]
+translateBinOpU (TConst TWord64) BOr   q1 q2 = [| or#  $q1 $q2 |]
 translateBinOpU t Minus q1 q2 = unwrap t [| $(wrapValue t q1) - $(wrapValue t q2) |]
 translateBinOpU t Plus  q1 q2 = unwrap t [| $(wrapValue t q1) + $(wrapValue t q2) |]
 translateBinOpU t Mult  q1 q2 = unwrap t [| $(wrapValue t q1) * $(wrapValue t q2) |]
@@ -977,6 +984,9 @@ translateBinOpU t Min   q1 q2 = unwrap t [| min $(wrapValue t q1) $(wrapValue t 
 translateBinOpU t Max   q1 q2 = unwrap t [| max $(wrapValue t q1) $(wrapValue t q2) |]
 translateBinOpU t And   q1 q2 = unwrap t [| $(wrapValue t q1) && $(wrapValue t q2) |]
 translateBinOpU t Or    q1 q2 = unwrap t [| $(wrapValue t q1) || $(wrapValue t q2) |]
+translateBinOpU t Xor   q1 q2 = unwrap t [| $(wrapValue t q1) `xor` $(wrapValue t q2) |]
+translateBinOpU t BAnd  q1 q2 = unwrap t [| $(wrapValue t q1) .&. $(wrapValue t q2) |]
+translateBinOpU t BOr   q1 q2 = unwrap t [| $(wrapValue t q1) .|. $(wrapValue t q2) |]
 
 translateCompOpU :: Type -> CompOp -> Q Exp -> Q Exp -> Q Exp
 translateCompOpU (TConst TInt)   EQU q1 q2 = [| $q1 ==# $q2 |]
