@@ -57,6 +57,15 @@ data Expr =
   -- (Integral a, Num b) => a -> b
   | FromIntegral Type Type Expr
 
+  -- (Bits a) => Int -> a
+  | Bit Type Expr
+  -- (Bits a) => a -> Int -> a
+  | Rotate Type Expr Expr
+  -- (Bits a) => a -> Int -> a
+  | ShiftL Type Expr Expr
+  -- (Bits a) => a -> Int -> a
+  | ShiftR Type Expr Expr
+
   -- Bool -> Bool
   | BoolLit Bool
 
@@ -606,6 +615,7 @@ showExpr d (UnOp t op a) =
     Abs    -> showApp d "abs" [a]
     Signum -> showApp d "signum" [a]
     Recip  -> showApp d "recip" [a]
+    Complement -> showApp d "complement" [a]
 showExpr d (BinOp t op a b)  = showBinOp d op a b
 showExpr d (Compare t op a b) = showCompOp d op a b
 showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
@@ -614,6 +624,10 @@ showExpr d (FromRational t r) =
     TFloat  -> shows (fromRational r :: Float)
     TDouble -> shows (fromRational r :: Double)
 showExpr d (FromIntegral t s a) = showApp d "fromIntegral" [a]
+showExpr d (Bit t a) = showApp d "bit" [a]
+showExpr d (Rotate t a b) = showApp d "rotate" [a,b]
+showExpr d (ShiftL t a b) = showApp d "shiftL" [a,b]
+showExpr d (ShiftR t a b) = showApp d "shiftR" [a,b]
 showExpr d (BoolLit b)     = shows b
 showExpr d (Unit) = showString "()"
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
@@ -676,6 +690,10 @@ translateU env (FromRational t (a :% b)) = translateFromRationalU t (a :% b)
 translateU env (FromIntegral t s e) = 
   caseE [| fromIntegral $(wrapValue s (translateU env e)) |]
     [match (return $ typeToPatternB "f" t) (normalB $ return $ tupExpr [] "f" t) []]
+translateU env (Bit t e) = unwrap t [| bit (I# $(translateU env e)) |]
+translateU env (Rotate t e1 e2) = unwrap t [| rotate $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
+translateU env (ShiftL t e1 e2) = unwrap t [| shiftL $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
+translateU env (ShiftR t e1 e2) = unwrap t [| shiftR $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (BoolLit b) = [| b |]
 translateU env (Compare t op e1 e2) = translateCompOpU t op (translateU env e1) (translateU env e2)
 translateU env (Unit) = [| () |]
@@ -937,9 +955,12 @@ translateFromRationalU _       _ = error "fromRational: unsupported type"
 
 
 translateUnOpU :: Type -> UnOp -> Q Exp -> Q Exp
-translateUnOpU t Abs    q = unwrap t [| abs $(wrapValue t q) |]
-translateUnOpU t Signum q = unwrap t [| signum $(wrapValue t q) |]
-translateUnOpU t Recip  q = unwrap t [| recip $(wrapValue t q) |]
+translateUnOpU (TConst TWord)   Complement  q = [| not# $q |]
+translateUnOpU (TConst TWord64) Complement  q = [| not# $q |]
+translateUnOpU t Abs         q = unwrap t [| abs $(wrapValue t q) |]
+translateUnOpU t Signum      q = unwrap t [| signum $(wrapValue t q) |]
+translateUnOpU t Recip       q = unwrap t [| recip $(wrapValue t q) |]
+translateUnOpU t Complement  q = unwrap t [| complement $(wrapValue t q) |]
       
 translateBinOpU :: Type -> BinOp -> Q Exp -> Q Exp -> Q Exp
 translateBinOpU (TConst TInt)    Minus q1 q2 = [| $q1 -# $q2 |]

@@ -33,6 +33,8 @@ data Class = CEq
            | COrd
            | CNum
            | CIntegral
+           | CBits
+           | CFloating
            | CFractional
            | CShow
   deriving (Eq,Ord,Show)

@@ -134,13 +134,22 @@ toFOAST (HO.Binop t op a b) =
     HO.Or    -> FOT.BinOp (translateType t) FO.Or    (toFOAST a) (toFOAST b)
     HO.Min   -> FOT.BinOp (translateType t) FO.Min   (toFOAST a) (toFOAST b)
     HO.Max   -> FOT.BinOp (translateType t) FO.Max   (toFOAST a) (toFOAST b)
-toFOAST (HO.Abs t a)    = FOT.UnOp (translateType t) FO.Abs    (toFOAST a)
-toFOAST (HO.Signum t a) = FOT.UnOp (translateType t) FO.Signum (toFOAST a)
-toFOAST (HO.Recip t a)  = FOT.UnOp (translateType t) FO.Recip  (toFOAST a)
+    HO.Xor   -> FOT.BinOp (translateType t) FO.Xor   (toFOAST a) (toFOAST b)
+    HO.BAnd  -> FOT.BinOp (translateType t) FO.BAnd  (toFOAST a) (toFOAST b)
+    HO.BOr   -> FOT.BinOp (translateType t) FO.BOr   (toFOAST a) (toFOAST b)
+toFOAST (HO.Abs t a)        = FOT.UnOp (translateType t) FO.Abs        (toFOAST a)
+toFOAST (HO.Signum t a)     = FOT.UnOp (translateType t) FO.Signum     (toFOAST a)
+toFOAST (HO.Recip t a)      = FOT.UnOp (translateType t) FO.Recip      (toFOAST a)
+toFOAST (HO.Complement t a) = FOT.UnOp (translateType t) FO.Complement (toFOAST a)
 toFOAST (HO.FromInteger  t i) = FOT.FromInteger (translateTConst t) i
 toFOAST (HO.FromRational t r) = FOT.FromRational (translateTConst t) r
 toFOAST (HO.FromIntegral t t' a) = FOT.FromIntegral (translateType t) (translateType t') (toFOAST a)
 toFOAST (HO.BoolLit b) = FOT.BoolLit b
+
+toFOAST (HO.Bit t i) = FOT.Bit (translateType t) (toFOAST i)
+toFOAST (HO.Rotate t a i) = FOT.Rotate (translateType t) (toFOAST a) (toFOAST i)
+toFOAST (HO.ShiftL t a i) = FOT.ShiftL (translateType t) (toFOAST a) (toFOAST i)
+toFOAST (HO.ShiftR t a i) = FOT.ShiftR (translateType t) (toFOAST a) (toFOAST i)
 
 toFOAST (HO.Equal    t a b) = FOT.Compare (translateType t) FO.EQU (toFOAST a) (toFOAST b)
 toFOAST (HO.NotEqual t a b) = FOT.Compare (translateType t) FO.NEQ (toFOAST a) (toFOAST b)

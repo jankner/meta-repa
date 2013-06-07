@@ -343,7 +343,7 @@ a .|. b = Binop typeOf0 BOr a b
 xor :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
 xor a b = Binop typeOf0 Xor a b
 
-⊕ :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+(⊕) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
 a ⊕ b   = Binop typeOf0 Xor a b
 
 complement :: (Typeable a, Bits a) => Expr a -> Expr a

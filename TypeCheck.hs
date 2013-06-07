@@ -304,6 +304,9 @@ typeFromBinOp Div   = newTVarOfClass CIntegral
 typeFromBinOp Mod   = newTVarOfClass CIntegral
 typeFromBinOp Min   = newTVarOfClass COrd
 typeFromBinOp Max   = newTVarOfClass COrd
+typeFromBinOp Xor   = newTVarOfClass CBits
+typeFromBinOp BAnd  = newTVarOfClass CBits
+typeFromBinOp BOr   = newTVarOfClass CBits
 typeFromBinOp And   = return tBool
 typeFromBinOp Or    = return tBool
 
@@ -311,6 +314,7 @@ typeFromUnOp :: UnOp -> TC Type
 typeFromUnOp Abs    = newTVarOfClass CNum
 typeFromUnOp Signum = newTVarOfClass CNum
 typeFromUnOp Recip  = newTVarOfClass CNum
+typeFromUnOp Complement = newTVarOfClass CBits
 
 typeFromCompOp EQU = newTVarOfClass CEq
 typeFromCompOp NEQ = newTVarOfClass CEq
@@ -338,6 +342,12 @@ classMatch CIntegral (TConst TWord) = True
 classMatch CIntegral (TConst TWord64) = True
 classMatch CFractional (TConst TFloat) = True
 classMatch CFractional (TConst TDouble) = True
+classMatch CFloating (TConst TFloat) = True
+classMatch CFloating (TConst TDouble) = True
+classMatch CBits (TConst TInt) = True
+classMatch CBits (TConst TInt64) = True
+classMatch CBits (TConst TWord) = True
+classMatch CBits (TConst TWord64) = True
 classMatch CShow (TConst _) = True
 classMatch CShow (TTup2 t1 t2) = (classMatch CShow t1) && (classMatch CShow t2)
 classMatch CShow (TTupN ts) | length ts <= 15 = foldl1 (&&) (map (classMatch CShow) ts)
@@ -637,10 +647,37 @@ inferT2 e@(T.FromRational t r)
 inferT2 (T.FromIntegral tr s e) = do
   t <- inferT2 e
   unless (classMatch CIntegral t) $
-    throwError ("argument of fromIntegral must be of class Integral in expression " ++ (show e) ++ ". actual type: " ++ (show t))
+    throwError ("argument of 'fromIntegral' must be of class Integral in expression " ++ (show e) ++ ". actual type: " ++ (show t))
   unless (classMatch CNum tr) $
-    throwError ("result type of fromIntegral must be of class Num in expression " ++ (show (T.FromIntegral tr s e)) ++ ". actual type: " ++ (show tr))
+    throwError ("result type of 'fromIntegral' must be of class Num in expression " ++ (show (T.FromIntegral tr s e)) ++ ". actual type: " ++ (show tr))
   return tr
+inferT2 (T.Bit tr e) = do
+  t <- inferT2 e
+  matchType2 e t tInt
+  unless (classMatch CBits tr) $
+    throwError ("result type of 'bit' must be of class Bits in expression " ++ (show (T.Bit tr e)) ++ ". actual type: " ++ (show tr))
+  return tr
+inferT2 (T.Rotate _ e1 e2) = do
+  t1 <- inferT2 e1
+  t2 <- inferT2 e2
+  matchType2 e1 t1 tInt
+  unless (classMatch CBits t2) $
+    throwError ("argument of 'rotate' must be of class Integral in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
+  return t2
+inferT2 (T.ShiftL _ e1 e2) = do
+  t1 <- inferT2 e1
+  t2 <- inferT2 e2
+  matchType2 e1 t1 tInt
+  unless (classMatch CBits t2) $
+    throwError ("argument of 'shiftL' must be of class Integral in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
+  return t2
+inferT2 (T.ShiftR _ e1 e2) = do
+  t1 <- inferT2 e1
+  t2 <- inferT2 e2
+  matchType2 e1 t1 tInt
+  unless (classMatch CBits t2) $
+    throwError ("argument of 'shiftR' must be of class Integral in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
+  return t2
 inferT2 (T.BoolLit b) = return tBool
 inferT2 (T.Unit) = return tUnit
 inferT2 (T.Tup2 e1 e2) = liftM2 TTup2 (inferT2 e1) (inferT2 e2)
@@ -804,14 +841,18 @@ checkBinOp Div   t | classMatch CIntegral t = return ()
 checkBinOp Mod   t | classMatch CIntegral t = return ()
 checkBinOp Min   t | classMatch COrd t = return ()
 checkBinOp Max   t | classMatch COrd t = return ()
+checkBinOp Xor   t | classMatch CBits t = return ()
+checkBinOp BAnd  t | classMatch CBits t = return ()
+checkBinOp BOr   t | classMatch CBits t = return ()
 checkBinOp And   t | t == tBool = return ()
 checkBinOp Or    t | t == tBool = return ()
 checkBinOp op t = throwError ("type " ++ (show t) ++ " not compatible with operator " ++ (show op))
 
 checkUnOp :: UnOp -> Type -> TC2 ()
-checkUnOp Abs    t | classMatch CNum t = return ()
-checkUnOp Signum t | classMatch CNum t = return ()
-checkUnOp Recip  t | classMatch CFractional t = return ()
+checkUnOp Abs        t | classMatch CNum t = return ()
+checkUnOp Signum     t | classMatch CNum t = return ()
+checkUnOp Recip      t | classMatch CFractional t = return ()
+checkUnOp Complement t | classMatch CBits t = return ()
 checkUnOp op     t = throwError ("type " ++ (show t) ++ " not compatible with operator " ++ (show op))
 
 checkCompOp :: CompOp -> Type -> TC2 ()

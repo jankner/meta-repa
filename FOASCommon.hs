@@ -21,6 +21,7 @@ data BinOp = Plus  -- Num a => P a
 data UnOp = Abs    -- Num a
           | Signum -- Num a
           | Recip  -- Fractional a
+          | Complement -- Bits a
   deriving (Show, Eq, Ord)
 
 data CompOp = EQU  -- Eq a => CompOp a
