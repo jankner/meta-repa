@@ -236,13 +236,12 @@ data Expr a where
   App :: Expr (a -> b) -> Type a -> Expr a -> Expr b
 
   Binop :: Type a -> Binop a -> Expr a -> Expr a -> Expr a
-  Abs :: Num a => Type a -> Expr a -> Expr a
-  Signum :: Num a => Type a -> Expr a -> Expr a
-  Recip :: Fractional a => Type a -> Expr a -> Expr a
+  Unop :: Type a -> Unop a -> Expr a -> Expr a
+
   FromInteger :: Num a => TypeConst a -> Integer -> Expr a
   FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
   FromIntegral :: (Integral a, Num b) => Type b -> Type a -> Expr a -> Expr b
-  Complement :: Bits a => Type a -> Expr a -> Expr a
+
   Bit :: Bits a => Type a -> Expr Int -> Expr a
   Rotate :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
   ShiftL :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
@@ -309,8 +308,25 @@ data Binop a where
   Xor   :: Bits a => Binop a
   BAnd  :: Bits a => Binop a
   BOr   :: Bits a => Binop a
+  Pow   :: Floating a => Binop a
 
 deriving instance Eq (Binop a)
+
+data Unop a where
+  Abs    :: Num a => Unop a
+  Signum :: Num a => Unop a
+  Recip  :: Fractional a => Unop a
+  Complement :: Bits a => Unop a
+  Exp  :: Floating a => Unop a
+  Sqrt :: Floating a => Unop a
+  Log  :: Floating a => Unop a
+  Sin  :: Floating a => Unop a
+  Tan  :: Floating a => Unop a
+  Cos  :: Floating a => Unop a
+  ASin :: Floating a => Unop a
+  ATan :: Floating a => Unop a
+  ACos :: Floating a => Unop a
+
 
 instance (Storable a, Num a) => Num (Expr a) where
   (FromInteger t 0) + e                 = e
@@ -323,15 +339,28 @@ instance (Storable a, Num a) => Num (Expr a) where
   e1 * e2 = Binop (TConst (typeConstOf0)) Mult e1 e2
   e                 - (FromInteger t 0) = e
   e1 - e2 = Binop (TConst (typeConstOf0)) Minus e1 e2
-  abs = Abs (TConst (typeConstOf0)) 
-  signum = Signum (TConst (typeConstOf0)) 
+  abs = Unop (TConst (typeConstOf0)) Abs
+  signum = Unop (TConst (typeConstOf0)) Signum
   fromInteger = FromInteger typeConstOf0
 
 
 instance (Storable a, Fractional a) => Fractional (Expr a) where
   (/) = Binop (TConst (typeConstOf0)) FDiv
-  recip = Recip (TConst (typeConstOf0))
+  recip = Unop (TConst (typeConstOf0)) Recip
   fromRational = FromRational typeConstOf0
+
+instance (Storable a, Typeable a, Floating a, Real a) => Floating (Expr a) where
+  pi = fromRational (toRational (pi :: a))
+  exp  = Unop typeOf0 Exp
+  sqrt = Unop typeOf0 Sqrt
+  log  = Unop typeOf0 Log
+  sin  = Unop typeOf0 Sin
+  cos  = Unop typeOf0 Cos
+  tan  = Unop typeOf0 Tan
+  asin = Unop typeOf0 ASin
+  acos = Unop typeOf0 ACos
+  atan = Unop typeOf0 ATan
+  (**) = Binop typeOf0 Pow
 
 --instance Bits a => Bits (Expr a) where
 (.&.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
@@ -347,7 +376,7 @@ xor a b = Binop typeOf0 Xor a b
 a ⊕ b   = Binop typeOf0 Xor a b
 
 complement :: (Typeable a, Bits a) => Expr a -> Expr a
-complement a = Complement typeOf0 a
+complement a = Unop typeOf0 Complement a
 
 bit :: (Typeable a, Bits a) => Expr Int -> Expr a
 bit i = Bit typeOf0 i  
@@ -484,8 +513,8 @@ whileM cond step action s | cond s    = action s >> whileM cond step action (ste
 showExpr :: Int -> Expr a -> String
 showExpr i (Var v) = "x" ++ (show v)
 showExpr i (Binop t op a b)  = "(" ++ (showBinOp i op a b) ++ ")"
-showExpr i (Abs t a)         = "(abs " ++ (showExpr i a) ++ ")"
-showExpr i (Signum t a)      = "(signum " ++ (showExpr i a) ++ ")"
+--showExpr i (Abs t a)         = "(abs " ++ (showExpr i a) ++ ")"
+--showExpr i (Signum t a)      = "(signum " ++ (showExpr i a) ++ ")"
 showExpr i (FromInteger t n) = show n
 showExpr i (FromRational t r) = "(fromRational " ++ (show r) ++ ")"
 showExpr i (FromIntegral _ _ a) = "(fromIntegral " ++ (showExpr i a) ++ ")"

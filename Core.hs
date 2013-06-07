@@ -137,10 +137,21 @@ toFOAST (HO.Binop t op a b) =
     HO.Xor   -> FOT.BinOp (translateType t) FO.Xor   (toFOAST a) (toFOAST b)
     HO.BAnd  -> FOT.BinOp (translateType t) FO.BAnd  (toFOAST a) (toFOAST b)
     HO.BOr   -> FOT.BinOp (translateType t) FO.BOr   (toFOAST a) (toFOAST b)
-toFOAST (HO.Abs t a)        = FOT.UnOp (translateType t) FO.Abs        (toFOAST a)
-toFOAST (HO.Signum t a)     = FOT.UnOp (translateType t) FO.Signum     (toFOAST a)
-toFOAST (HO.Recip t a)      = FOT.UnOp (translateType t) FO.Recip      (toFOAST a)
-toFOAST (HO.Complement t a) = FOT.UnOp (translateType t) FO.Complement (toFOAST a)
+toFOAST (HO.Unop t op a) =
+  case op of
+    HO.Abs        -> FOT.UnOp (translateType t) FO.Abs        (toFOAST a)
+    HO.Signum     -> FOT.UnOp (translateType t) FO.Signum     (toFOAST a)
+    HO.Recip      -> FOT.UnOp (translateType t) FO.Recip      (toFOAST a)
+    HO.Complement -> FOT.UnOp (translateType t) FO.Complement (toFOAST a)
+    HO.Exp        -> FOT.UnOp (translateType t) FO.Exp        (toFOAST a)
+    HO.Sqrt       -> FOT.UnOp (translateType t) FO.Sqrt       (toFOAST a)
+    HO.Log        -> FOT.UnOp (translateType t) FO.Log        (toFOAST a)
+    HO.Sin        -> FOT.UnOp (translateType t) FO.Sin        (toFOAST a)
+    HO.Cos        -> FOT.UnOp (translateType t) FO.Cos        (toFOAST a)
+    HO.Tan        -> FOT.UnOp (translateType t) FO.Tan        (toFOAST a)
+    HO.ASin       -> FOT.UnOp (translateType t) FO.ASin       (toFOAST a)
+    HO.ACos       -> FOT.UnOp (translateType t) FO.ACos       (toFOAST a)
+    HO.ATan       -> FOT.UnOp (translateType t) FO.ATan       (toFOAST a)
 toFOAST (HO.FromInteger  t i) = FOT.FromInteger (translateTConst t) i
 toFOAST (HO.FromRational t r) = FOT.FromRational (translateTConst t) r
 toFOAST (HO.FromIntegral t t' a) = FOT.FromIntegral (translateType t) (translateType t') (toFOAST a)

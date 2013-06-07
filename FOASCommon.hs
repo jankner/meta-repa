@@ -16,12 +16,22 @@ data BinOp = Plus  -- Num a => P a
            | Xor -- Bits a => P a
            | BAnd -- Bits a => P a
            | BOr -- Bits a => P a
+           | Pow -- Floating a
   deriving (Show, Eq, Ord)
 
 data UnOp = Abs    -- Num a
           | Signum -- Num a
           | Recip  -- Fractional a
           | Complement -- Bits a
+          | Exp  -- Floating a
+          | Sqrt -- Floating a
+          | Log  -- Floating a
+          | Sin  -- Floating a
+          | Tan  -- Floating a
+          | Cos  -- Floating a
+          | ASin -- Floating a
+          | ATan -- Floating a
+          | ACos -- Floating a
   deriving (Show, Eq, Ord)
 
 data CompOp = EQU  -- Eq a => CompOp a
