@@ -914,7 +914,7 @@ translateTypeU (TTup2 t1 t2) = UnboxedTupleT 2 `AppT` (translateTypeU t1) `AppT`
 translateTypeU (TTupN ts) = foldl AppT (UnboxedTupleT $ length ts) (map translateTypeU ts)
 translateTypeU (TMArr t) = (ConT ''IOUArray) `AppT` (ConT ''Int) `AppT` (translateType t)
 translateTypeU (TIArr t) = (ConT ''UArray) `AppT` (ConT ''Int) `AppT` (translateType t)
-translateTypeU (TIO   t) = (ConT ''IO) `AppT` (translateTypeU t)
+translateTypeU (TIO   t) = (ConT ''IO) `AppT` (translateType t)
 
 flattenType :: Type -> [Type]
 flattenType (TTup2 t1 t2) = (flattenType t1) ++ (flattenType t2)
@@ -1077,3 +1077,21 @@ wrapPrim TDouble e = [| D# $e |]
 wrapPrim TFloat  e = [| F# $e |]
 wrapPrim tc      e = e
 
+translateTypeConst TInt = ConT ''Int
+translateTypeConst TInt64 = ConT ''Int
+translateTypeConst TWord = ConT ''Word 
+translateTypeConst TWord64 = ConT ''Word
+translateTypeConst TFloat = ConT ''Float 
+translateTypeConst TDouble =  ConT ''Double
+translateTypeConst TBool = ConT ''Bool
+translateTypeConst TUnit = TupleT 0
+
+
+translateType :: Type -> TH.Type
+translateType (TConst tc) = translateTypeConst tc
+translateType (TFun  t1 t2) = (ArrowT `AppT` (translateType t1)) `AppT` (translateType t2)
+translateType (TTup2 t1 t2) = ((TupleT 2) `AppT` (translateType t1)) `AppT` (translateType t2)
+translateType (TTupN ts) = foldl AppT (TupleT $ length ts) (map translateType ts)
+translateType (TMArr t) = (ConT ''IOUArray) `AppT` (ConT ''Int) `AppT` (translateType t)
+translateType (TIArr t) = (ConT ''UArray) `AppT` (ConT ''Int) `AppT` (translateType t)
+translateType (TIO   t) = (ConT ''IO) `AppT` (translateType t)
