@@ -17,30 +17,10 @@ import Data.Array.Repa.Index
 import Data.Array.Repa.Eval.Gang
 
 import Data.Int
-import Data.Word
 
 import GHC.Exts
 import Prelude		as P
 
-import Control.DeepSeq
-
-
-while cond step init = loop init
-  where loop s | cond s = loop (step s)
-               | True   = s
-{-# INLINE [0] while #-}
-
-rec :: ((a -> r) -> a -> r) -> a -> r
-rec f x = let recf x = f recf x
-          in recf x
-{-# INLINE rec #-}
-
-whileM :: Monad m => (a -> Bool) -> (a -> a) -> (a -> m ()) ->  a -> m ()
-whileM cond step action init
-  = let loop !s | cond s = action s >> loop (step s)
-                | True   = P.return ()
-    in loop init
-{-# INLINE [0] whileM #-}
 
 parM :: Int# -> (Int# -> IO ()) -> IO ()
 parM n action = gangIO theGang $

@@ -1,12 +1,23 @@
 {-# OPTIONS_GHC -fth #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module FOASTyped where
+module FOASTyped 
+  ( Expr(..)
+  , translateW
+  , translateU
+  , cse
+  , exprTraverse
+  , exprTraverse0
+  , exprFold
+  , isAtomic
+  , reducel3
+  , reducel4
+  , showVar
+  ) where
 
 import FOASCommon
 import Types
 import Eval
-import MaybeNF
 
 import Data.Array.Base
 import Data.Array.IO hiding (unsafeFreeze)
