@@ -76,6 +76,8 @@ data Expr =
   | ShiftL Type Expr Expr
   -- (Bits a) => a -> Int -> a
   | ShiftR Type Expr Expr
+  -- (Bits a) => a -> Int
+  | PopCnt Type Expr
 
   -- Bool -> Bool
   | BoolLit Bool
@@ -705,6 +707,7 @@ translateU env (Bit t e) = unwrap t [| bit (I# $(translateU env e)) |]
 translateU env (Rotate t e1 e2) = unwrap t [| rotate $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (ShiftL t e1 e2) = unwrap t [| shiftL $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (ShiftR t e1 e2) = unwrap t [| shiftR $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
+translateU env (PopCnt t e) = unwrap (TConst TInt) [| popCount $(wrapValue t (translateU env e)) |]
 translateU env (BoolLit b) = [| b |]
 translateU env (Compare t op e1 e2) = translateCompOpU t op (translateU env e1) (translateU env e2)
 translateU env (Unit) = [| () |]

@@ -246,6 +246,7 @@ data Expr a where
   Rotate :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
   ShiftL :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
   ShiftR :: Bits a => Type a -> Expr a -> Expr Int -> Expr a
+  PopCnt :: Bits a => Type a -> Expr a -> Expr Int
 
   BoolLit :: Bool -> Expr Bool
 
@@ -389,6 +390,9 @@ a .<<. i = ShiftL typeOf0 a i
 
 (.>>.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
 a .>>. i = ShiftR typeOf0 a i
+
+popCount :: (Typeable a, Bits a) => Expr a -> Expr Int
+popCount e = PopCnt typeOf0 e
 
 getN :: (TupTypeable t, Get n t Expr b) => n -> Expr (t Id) -> Expr b
 getN n et = GetN typeOf0 n et
