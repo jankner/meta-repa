@@ -7,11 +7,8 @@ module Eval where
 
 import System.IO.Unsafe
 
-import Data.Array.IO hiding (unsafeFreeze)
-import Data.Array.MArray hiding (unsafeFreeze)
-import Data.Array.IArray
-import Data.Array.Unboxed
-import Data.Array.Unsafe
+import Data.Vector.Unboxed
+import Data.Vector.Unboxed.Mutable
 
 import Data.Array.Repa.Index
 import Data.Array.Repa.Eval.Gang
@@ -44,9 +41,9 @@ parM n action = gangIO theGang $
              run (ix +# 1#) end
 {-# INLINE [0] parM #-}
 
-runMutableArray :: (MArray IOUArray a IO, IArray UArray a) => IO (IOUArray Int a) -> UArray Int a
+runMutableArray :: (Unbox a) => IO (IOVector a) -> Vector a
 runMutableArray arr = unsafePerformIO (arr >>= unsafeFreeze)
 
-newIOUArray :: (MArray IOUArray a IO) => (Int, Int) -> IO (IOUArray Int a)
-newIOUArray = newArray_
+newIOUArray :: (Unbox a) => Int -> IO (IOVector a)
+newIOUArray = new
 

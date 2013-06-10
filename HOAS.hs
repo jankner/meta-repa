@@ -9,11 +9,8 @@
 module HOAS where
 
 
-import Data.Array.IO hiding (unsafeFreeze)
-import Data.Array.MArray hiding (unsafeFreeze)
-import Data.Array.IArray
-import Data.Array.Unboxed
-import Data.Array.Unsafe
+import Data.Vector.Unboxed (Vector,Unbox)
+import Data.Vector.Unboxed.Mutable (IOVector)
 
 import Data.Int
 import Data.Word
@@ -32,13 +29,15 @@ import System.IO.Unsafe
 
 import Language.Haskell.TH hiding (Type)
 
+type MArray a = IOVector a
+type IArray a = Vector a
 
 data Type a where
   TConst :: TypeConst a -> Type a
   TTup2 :: Type a -> Type b -> Type (a,b)
   TTupN :: Tup t => t Type -> Type (t Id)
-  TMArr :: Type a -> Type (IOUArray Int a)
-  TIArr :: Type a -> Type (UArray Int a)
+  TMArr :: Type a -> Type (MArray a)
+  TIArr :: Type a -> Type (IArray a)
   TFun :: Type a -> Type b -> Type (a -> b)
   TIO :: Type a -> Type (IO a)
 
@@ -54,37 +53,25 @@ data TypeConst a where
 
 deriving instance Show (TypeConst a)
 
-class (Typeable a, MArray IOUArray a IO, IArray UArray a) => Storable a where
-  typeConstOf :: a -> TypeConst a
-  typeConstOf0 :: TypeConst a
 
-instance Storable Int where
-  typeConstOf _ = TInt
-  typeConstOf0  = TInt
+class (Typeable a, Unbox a) => Storable a 
 
-instance Storable Int64 where
-  typeConstOf _ = TInt64
-  typeConstOf0  = TInt64
+instance Storable Int 
 
-instance Storable Word where
-  typeConstOf _ = TWord
-  typeConstOf0  = TWord
+instance Storable Int64 
 
-instance Storable Word64 where
-  typeConstOf _ = TWord64
-  typeConstOf0  = TWord64
+instance Storable Word 
 
-instance Storable Double where
-  typeConstOf _ = TDouble
-  typeConstOf0  = TDouble
+instance Storable Word64 
 
-instance Storable Float where
-  typeConstOf _ = TFloat
-  typeConstOf0  = TFloat
+instance Storable Double 
 
-instance Storable Bool where
-  typeConstOf _ = TBool
-  typeConstOf0  = TBool
+instance Storable Float 
+
+instance Storable Bool 
+
+instance (Storable a, Storable b) => Storable (a,b)
+
 
 class Typeable a where
   typeOf :: a -> Type a
@@ -131,11 +118,11 @@ instance (Typeable a, Typeable b) => Typeable (a,b) where
 --  typeOf _ = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
 --  typeOf0  = TTupN ((typeOf0 :: Type a) ::. ((typeOf0 :: Type b) ::. Ein (typeOf0 :: Type c)))
 
-instance Typeable a => Typeable (IOUArray Int a) where
+instance Typeable a => Typeable (MArray a) where
   typeOf _ = TMArr typeOf0
   typeOf0  = TMArr typeOf0
 
-instance Typeable a => Typeable (UArray Int a) where
+instance Typeable a => Typeable (IArray a) where
   typeOf _ = TIArr typeOf0
   typeOf0  = TIArr typeOf0
 
@@ -240,8 +227,8 @@ data Expr a where
   Binop :: Type a -> Binop a -> Expr a -> Expr a -> Expr a
   Unop :: Type a -> Unop a -> Expr a -> Expr a
 
-  FromInteger :: Num a => TypeConst a -> Integer -> Expr a
-  FromRational :: Fractional a => TypeConst a -> Rational -> Expr a
+  FromInteger :: Num a => Type a -> Integer -> Expr a
+  FromRational :: Fractional a => Type a -> Rational -> Expr a
   FromIntegral :: (Integral a, Num b) => Type b -> Type a -> Expr a -> Expr b
 
   Bit :: Bits a => Type a -> Expr Int -> Expr a
@@ -280,13 +267,13 @@ data Expr a where
   IterateWhile :: Type s -> Expr (s -> Bool) -> Expr (s -> s) -> Expr s -> Expr s
   WhileM :: Type s -> Expr (s -> Bool) -> Expr (s -> s) -> Expr (s -> IO ()) -> Expr s -> Expr (IO ())
 
-  RunMutableArray :: Storable a => Expr (IO (IOUArray Int a)) -> Expr (UArray Int a)
-  ReadIArray :: Storable a => Type a -> Expr (UArray Int a) -> Expr Int -> Expr a
-  ArrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
+  RunMutableArray :: Storable a => Expr (IO (MArray a)) -> Expr (IArray a)
+  ReadIArray :: Storable a => Type a -> Expr (IArray a) -> Expr Int -> Expr a
+  ArrayLength :: Storable a => Expr (IArray a) -> Expr Int
 
-  NewArray   :: Storable a => Type a -> Expr Int -> Expr (IO (IOUArray Int a))
-  ReadArray  :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr (IO a)
-  WriteArray :: Storable a => Type a -> Expr (IOUArray Int a) -> Expr Int -> Expr a -> Expr (IO ())
+  NewArray   :: Storable a => Type a -> Expr Int -> Expr (IO (MArray a))
+  ReadArray  :: Storable a => Expr (MArray a) -> Expr Int -> Expr (IO a)
+  WriteArray :: Storable a => Type a -> Expr (MArray a) -> Expr Int -> Expr a -> Expr (IO ())
   ParM       :: Expr Int -> Expr (Int -> IO ()) -> Expr (IO ())
   Skip       :: Expr (IO ())
 
@@ -331,28 +318,28 @@ data Unop a where
   ACos :: Floating a => Unop a
 
 
-instance (Storable a, Num a) => Num (Expr a) where
+instance (Typeable a, Num a) => Num (Expr a) where
   (FromInteger t 0) + e                 = e
   e                 + (FromInteger t 0) = e
-  e1 + e2 = Binop (TConst (typeConstOf0)) Plus e1 e2
+  e1 + e2 = Binop typeOf0 Plus e1 e2
   (FromInteger t 1) * e                 = e
   e                 * (FromInteger t 1) = e
   (FromInteger t 0) * e2                = 0
   e1                * (FromInteger t 0) = 0
-  e1 * e2 = Binop (TConst (typeConstOf0)) Mult e1 e2
+  e1 * e2 = Binop typeOf0 Mult e1 e2
   e                 - (FromInteger t 0) = e
-  e1 - e2 = Binop (TConst (typeConstOf0)) Minus e1 e2
-  abs = Unop (TConst (typeConstOf0)) Abs
-  signum = Unop (TConst (typeConstOf0)) Signum
-  fromInteger = FromInteger typeConstOf0
+  e1 - e2 = Binop typeOf0 Minus e1 e2
+  abs = Unop typeOf0 Abs
+  signum = Unop typeOf0 Signum
+  fromInteger = FromInteger typeOf0
 
 
-instance (Storable a, Fractional a) => Fractional (Expr a) where
-  (/) = Binop (TConst (typeConstOf0)) FDiv
-  recip = Unop (TConst (typeConstOf0)) Recip
-  fromRational = FromRational typeConstOf0
+instance (Typeable a, Fractional a) => Fractional (Expr a) where
+  (/) = Binop typeOf0 FDiv
+  recip = Unop typeOf0 Recip
+  fromRational = FromRational typeOf0
 
-instance (Storable a, Typeable a, Floating a) => Floating (Expr a) where
+instance (Typeable a, Floating a) => Floating (Expr a) where
 --  pi = fromRational (toRational (pi :: a))
   pi   = fromRational (2383784714 :% 758782241)
   exp  = Unop typeOf0 Exp
@@ -415,23 +402,23 @@ runM (M f) = f (Return typeOf0)
 bindE :: Typeable a => Expr (IO a) -> Expr (a -> IO b) -> Expr (IO b)
 bindE = (Bind typeOf0)
 
-newArrayE :: (Storable a) => Expr Int -> M (Expr (IOUArray Int a))
+newArrayE :: (Storable a) => Expr Int -> M (Expr (MArray a))
 newArrayE i = M (\k -> NewArray typeOf0 i `bindE` internalize k)
 
 parM :: Expr Int -> (Expr Int -> M ()) -> M ()
 parM l body = M (\k -> ParM l (internalize (\i -> unM (body i) (\() -> Skip)))
                        `bindE` Lambda typeOf0 (\_ -> k ()))
 
-writeArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> Expr a -> M ()
-writeArrayE arr i a = M (\k -> WriteArray typeOf0 arr i a `bindE` Lambda typeOf0 (\_ -> k ()) )
+writeArrayE :: Storable a => Expr (MArray a) -> Expr Int -> Expr a -> M ()
+writeArrayE arr i a = M (\k -> WriteArray typeOf0 arr i (internalize a) `bindE` Lambda typeOf0 (\_ -> k ()) )
 
-readArrayE :: Storable a => Expr (IOUArray Int a) -> Expr Int -> M (Expr a)
+readArrayE :: Storable a => Expr (MArray a) -> Expr Int -> M (Expr a)
 readArrayE arr i = M (\k -> ReadArray arr i `bindE` Lambda typeOf0 k)
 
-readIArray :: Storable a => Expr (UArray Int a) -> Expr Int -> Expr a
+readIArray :: Storable a => Expr (IArray a) -> Expr Int -> Expr a
 readIArray arr i = ReadIArray typeOf0 arr i
 
-arrayLength :: Storable a => Expr (UArray Int a) -> Expr Int
+arrayLength :: Storable a => Expr (IArray a) -> Expr Int
 arrayLength arr = ArrayLength arr
 
 printE :: (Computable a, Show (Internal a)) => a -> M ()
@@ -447,7 +434,7 @@ whileE :: (Typeable (Internal st), Computable st) => (st -> Expr Bool) -> (st ->
 whileE cond step action init = M (\k -> WhileM typeOf0 (lowerFun cond) (lowerFun step) (Lambda typeOf0 (\a -> unM ((action . externalize) a) (\() -> Skip))) (internalize init)
                                         `bindE` Lambda typeOf0 (\_ -> k ()))
 
-runMutableArray :: Storable a => M (Expr (IOUArray Int a)) -> Expr (UArray Int a)
+runMutableArray :: Storable a => M (Expr (MArray a)) -> Expr (IArray a)
 runMutableArray m = RunMutableArray (runM m)
 
 let_ :: (Computable a, Computable b) => a -> (a -> b) -> b
@@ -571,10 +558,6 @@ showBinOp i And   a b = (showExpr i a) ++ " && " ++ (showExpr i b)
 showBinOp i Or    a b = (showExpr i a) ++ " || " ++ (showExpr i b)
 showBinOp i Max a b     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
-
-
-newIOUArray :: Storable a => (Int, Int) -> IO (IOUArray Int a)
-newIOUArray = newArray_
 
 
 class Typeable (Internal a) => Computable a where

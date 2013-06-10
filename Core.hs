@@ -62,8 +62,8 @@ toFOAS (HO.Unop t op a) =
     HO.ASin       -> FO.UnOp (translateType t) FO.ASin       (toFOAS a)
     HO.ACos       -> FO.UnOp (translateType t) FO.ACos       (toFOAS a)
     HO.ATan       -> FO.UnOp (translateType t) FO.ATan       (toFOAS a)
-toFOAS (HO.FromInteger  t i) = FO.FromInteger (translateTConst t) i
-toFOAS (HO.FromRational t r) = FO.FromRational (translateTConst t) r
+toFOAS (HO.FromInteger  t i) = FO.FromInteger (translateType t) i
+toFOAS (HO.FromRational t r) = FO.FromRational (translateType t) r
 toFOAS (HO.FromIntegral t t' a) = FO.FromIntegral (translateType t) (translateType t') (toFOAS a)
 toFOAS (HO.BoolLit b) = FO.BoolLit b
 

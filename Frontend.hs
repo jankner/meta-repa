@@ -9,11 +9,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 module Frontend where
 
-import Data.Array.IO hiding (inRange,index)
-import Data.Array.MArray hiding (inRange,index)
-import Data.Array.IArray hiding (inRange,index)
-import Data.Array.Unboxed hiding (inRange,index)
-
 import qualified Prelude as P
 import Prelude (Num(..),Fractional(..),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
 import Control.Monad
@@ -154,7 +149,7 @@ dim (sh :. _) = dim sh + 1
 
 class Shapely sh where
   mkShape :: Expr Index -> Shape sh
-  toShape :: Int -> Expr (UArray Int Length) -> Shape sh
+  toShape :: Int -> Expr (IArray Length) -> Shape sh
 
 instance Shapely Z where
   mkShape _ = Z
@@ -227,7 +222,7 @@ instance P.Functor (Pull sh) where
 fromFunction :: (Shape sh -> a) -> Shape sh -> Pull sh a
 fromFunction ixf sh = Pull ixf sh
 
-storePull :: Storable a => Pull sh (Expr a) -> M (Expr (IOUArray Length a))
+storePull :: Storable a => Pull sh (Expr a) -> M (Expr (MArray a))
 storePull (Pull ixf sh) = 
   do arr <- newArrayE (size sh)
      forShape sh (\i -> writeArrayE arr i (ixf (fromIndex sh i))) 
@@ -248,7 +243,7 @@ instance P.Functor (Push sh) where
     where m' k = m (\i a -> k i (f a))
 
 
-storePush :: Storable a => Push sh (Expr a) -> M (Expr (IOUArray Length a))
+storePush :: Storable a => Push sh (Expr a) -> M (Expr (MArray a))
 storePush (Push m sh) =
   do arr <- newArrayE (size sh)
      m (\i a -> writeArrayE arr (toIndex sh i) a)

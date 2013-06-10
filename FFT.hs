@@ -14,7 +14,6 @@ import HOAS hiding (Z)
 
 import Data.Bits (Bits)
 import qualified Data.Bits as B
-import Data.Array.Unboxed (UArray)
 
 -- | DFT2 for Decimation-In-Frequency
 dft2 :: Num a => a -> a -> a -> (a,a)
@@ -198,7 +197,7 @@ composeOn = flip . fold . flip
 
 type Complex a = (Expr a, Expr a)
 
-instance (Eq a,Num a,Floating a, Storable a) => Num (Expr a, Expr a) where
+instance (Eq a,Num a,Floating a, Typeable a) => Num (Expr a, Expr a) where
   (a1,b1) + (a2,b2) = (a1+a2,b1+b2)
   (a1,b1) * (a2,b2) = (a1*a2-b1*b2,a1*b2+b1*a2)
   negate (a,b)      = (negate a, negate b)
@@ -254,7 +253,7 @@ bitCount x = popCount x
 length1 :: Pull (Z :. Expr Length) a -> Expr Length
 length1 (Pull _ixf (Z :. l)) = l
 
-toMem :: (Computable a, Storable (Internal a)) => Push sh a -> Expr (UArray Int (Internal a))
+toMem :: (Computable a, Storable (Internal a)) => Push sh a -> Expr (IArray (Internal a))
 toMem (Push f sh) = runMutableArray $ do
                       arr <- newArrayE l
                       f (\ix a -> writeArrayE arr (toIndex sh ix) (internalize a))
@@ -262,7 +261,7 @@ toMem (Push f sh) = runMutableArray $ do
   where
     l = size sh
 
-fromMem :: (Computable a, Storable (Internal a)) => Shape sh -> Expr (UArray Int (Internal a)) -> Pull sh a
+fromMem :: (Computable a, Storable (Internal a)) => Shape sh -> Expr (IArray (Internal a)) -> Pull sh a
 fromMem sh e = Pull ixf sh
   where ixf i = externalize $ readIArray e (toIndex sh i)
 

@@ -19,12 +19,9 @@ import FOASCommon
 import Types
 import Eval
 
-import Data.Array.Base
-import Data.Array.IO hiding (unsafeFreeze)
-import Data.Array.MArray hiding (unsafeFreeze)
-import Data.Array.IArray
-import Data.Array.Unboxed
-import Data.Array.Unsafe
+import qualified Data.Vector.Unboxed as VU
+import qualified Data.Vector.Unboxed.Mutable as VU hiding (length)
+
 import Data.Bits
 
 import Data.Int
@@ -62,9 +59,9 @@ data Expr =
   -- P a -> a -> a
   | UnOp Type UnOp Expr
   -- Num a => Integer -> a
-  | FromInteger TypeConst Integer
+  | FromInteger Type Integer
   -- Fractional a => Rational -> a
-  | FromRational TypeConst Rational
+  | FromRational Type Rational
   -- (Integral a, Num b) => a -> b
   | FromIntegral Type Type Expr
 
@@ -634,8 +631,8 @@ showExpr d (Compare t op a b) = showCompOp d op a b
 showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
 showExpr d (FromRational t r) =
   case t of
-    TFloat  -> shows (fromRational r :: Float)
-    TDouble -> shows (fromRational r :: Double)
+    (TConst TFloat)  -> shows (fromRational r :: Float)
+    (TConst TDouble) -> shows (fromRational r :: Double)
 showExpr d (FromIntegral t s a) = showApp d "fromIntegral" [a]
 showExpr d (Bit t a) = showApp d "bit" [a]
 showExpr d (Rotate t a b) = showApp d "rotate" [a,b]
@@ -707,7 +704,6 @@ translateU env (Bit t e) = unwrap t [| bit (I# $(translateU env e)) |]
 translateU env (Rotate t e1 e2) = unwrap t [| rotate $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (ShiftL t e1 e2) = unwrap t [| shiftL $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (ShiftR t e1 e2) = unwrap t [| shiftR $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
-translateU env (PopCnt t e) = unwrap (TConst TInt) [| popCount $(wrapValue t (translateU env e)) |]
 translateU env (BoolLit b) = [| b |]
 translateU env (Compare t op e1 e2) = translateCompOpU t op (translateU env e1) (translateU env e2)
 translateU env (Unit) = [| () |]
@@ -766,11 +762,11 @@ translateU env (WhileM t cond step action init) = do
       []]]
     (letBindAndApply "init" t (varE loopN) (translateU env init))
 translateU env (RunMutableArray e) = [| runMutableArray $(translateU env e) |]
-translateU env (ReadIArray t e1 e2) = unwrap t [| $(translateU env e1) `unsafeAt` $(wrapValue tInt (translateU env e2)) |]
-translateU env (ArrayLength e) = [| snd (bounds $(translateU env e)) + 1 |]
-translateU env (NewArray t e) = sigE [| newIOUArray (0,$(wrapValue tInt (translateU env e))-1) |] (translateTypeUQ (TIO $ TMArr t))
-translateU env (WriteArray t e1 e2 e3) = [| unsafeWrite $(translateU env e1) $(wrapValue tInt (translateU env e2)) $(wrapValue t (translateU env e3)) |]
-translateU env (ReadArray e1 e2) = [| unsafeRead $(translateU env e1) $(wrapValue tInt (translateU env e2)) |]
+translateU env (ReadIArray t e1 e2) = unwrap t [| $(translateU env e1) `VU.unsafeIndex` $(wrapValue tInt (translateU env e2)) |]
+translateU env (ArrayLength e) = unwrap tInt [| VU.length $(translateU env e) |]
+translateU env (NewArray t e) = sigE [| VU.new $(wrapValue tInt (translateU env e)) |] (translateTypeUQ (TIO $ TMArr t))
+translateU env (WriteArray t e1 e2 e3) = [| VU.unsafeWrite $(translateU env e1) $(wrapValue tInt (translateU env e2)) $(wrapValue t (translateU env e3)) |]
+translateU env (ReadArray e1 e2) = [| VU.unsafeRead $(translateU env e1) $(wrapValue tInt (translateU env e2)) |]
 translateU env (ParM e1 e2) = [| parM $(translateU env e1) $(translateU env e2) |]
 translateU env Skip = [| return () |]
 translateU env (Print e) = [| print $(translateU env e) |]
@@ -944,8 +940,8 @@ translateTypeU (TFun  t1 t2) = foldr1 funT $ map translateTypeU $ (flattenType t
  where funT t1 t2 = (ArrowT `AppT` t1) `AppT` t2
 translateTypeU (TTup2 t1 t2) = UnboxedTupleT 2 `AppT` (translateTypeU t1) `AppT` (translateTypeU t2)
 translateTypeU (TTupN ts) = foldl AppT (UnboxedTupleT $ length ts) (map translateTypeU ts)
-translateTypeU (TMArr t) = (ConT ''IOUArray) `AppT` (ConT ''Int) `AppT` (translateType t)
-translateTypeU (TIArr t) = (ConT ''UArray) `AppT` (ConT ''Int) `AppT` (translateType t)
+translateTypeU (TMArr t) = (ConT ''VU.IOVector) `AppT` (translateType t)
+translateTypeU (TIArr t) = (ConT ''VU.Vector) `AppT` (translateType t)
 translateTypeU (TIO   t) = (ConT ''IO) `AppT` (translateType t)
 
 flattenType :: Type -> [Type]
@@ -953,19 +949,19 @@ flattenType (TTup2 t1 t2) = (flattenType t1) ++ (flattenType t2)
 flattenType (TTupN ts) = concatMap flattenType ts
 flattenType t = [t]
 
-translateFromIntegerU :: TypeConst -> Integer -> Q Exp
-translateFromIntegerU TInt    i = litE (intPrimL i)
-translateFromIntegerU TInt64  i = litE (intPrimL i)
-translateFromIntegerU TWord   i = litE (wordPrimL i)
-translateFromIntegerU TWord64 i = litE (wordPrimL i)
-translateFromIntegerU TDouble i = litE (doublePrimL (i :% 1))
-translateFromIntegerU TFloat  i = litE (floatPrimL  (i :% 1))
-translateFromIntegerU t       _ = error ("fromInteger: unsupported type: " ++ show t)
+translateFromIntegerU :: Type -> Integer -> Q Exp
+translateFromIntegerU (TConst TInt)    i = litE (intPrimL i)
+translateFromIntegerU (TConst TInt64)  i = litE (intPrimL i)
+translateFromIntegerU (TConst TWord)   i = litE (wordPrimL i)
+translateFromIntegerU (TConst TWord64) i = litE (wordPrimL i)
+translateFromIntegerU (TConst TDouble) i = litE (doublePrimL (i :% 1))
+translateFromIntegerU (TConst TFloat)  i = litE (floatPrimL  (i :% 1))
+translateFromIntegerU t                _ = error ("fromInteger: unsupported type: " ++ show t)
 
-translateFromRationalU :: TypeConst -> Rational -> Q Exp
-translateFromRationalU TDouble r = litE (doublePrimL r)
-translateFromRationalU TFloat  r = litE (floatPrimL  r)
-translateFromRationalU _       _ = error "fromRational: unsupported type"
+translateFromRationalU :: Type -> Rational -> Q Exp
+translateFromRationalU (TConst TDouble) r = litE (doublePrimL r)
+translateFromRationalU (TConst TFloat)  r = litE (floatPrimL  r)
+translateFromRationalU _                _ = error "fromRational: unsupported type"
 
 
 translateUnOpU :: Type -> UnOp -> Q Exp -> Q Exp
@@ -1157,6 +1153,6 @@ translateType (TConst tc) = translateTypeConst tc
 translateType (TFun  t1 t2) = (ArrowT `AppT` (translateType t1)) `AppT` (translateType t2)
 translateType (TTup2 t1 t2) = ((TupleT 2) `AppT` (translateType t1)) `AppT` (translateType t2)
 translateType (TTupN ts) = foldl AppT (TupleT $ length ts) (map translateType ts)
-translateType (TMArr t) = (ConT ''IOUArray) `AppT` (ConT ''Int) `AppT` (translateType t)
-translateType (TIArr t) = (ConT ''UArray) `AppT` (ConT ''Int) `AppT` (translateType t)
+translateType (TMArr t) = (ConT ''VU.IOVector) `AppT` (translateType t)
+translateType (TIArr t) = (ConT ''VU.Vector) `AppT` (translateType t)
 translateType (TIO   t) = (ConT ''IO) `AppT` (translateType t)

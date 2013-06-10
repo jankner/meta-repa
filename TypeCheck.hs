@@ -92,11 +92,11 @@ infer :: Expr -> TC Type
 infer Skip = return (TIO tUnit)
 infer (Var v) = lookupVar v
 infer e@(FromInteger t i) 
-  | classMatch CNum (TConst t) = return (TConst t)
-  | otherwise                  = throwError ((show t) ++ " is not of class Num in expression: " ++ (show e))
+  | classMatch CNum t = return t
+  | otherwise         = throwError ((show t) ++ " is not of class Num in expression: " ++ (show e))
 infer e@(FromRational t r)
-  | classMatch CFractional (TConst t) = return (TConst t)
-  | otherwise                         = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
+  | classMatch CFractional t = return t
+  | otherwise                = throwError ((show t) ++ " is not of class Fractional in expression: " ++ (show e))
 infer (FromIntegral tr s e) = do
   t <- infer e
   unless (classMatch CIntegral t) $
