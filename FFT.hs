@@ -2,11 +2,12 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module FFT where
 
 import qualified Prelude as P
-import Prelude (Num(..),Fractional(..),Floating(..),Real(..),
+import Prelude (Eq,Num(..),Fractional(..),Floating(..),Real(..),
                 ($),(.),flip,(>>),Int,Monad(..),Bool,Double)
 import Frontend
 import HOAS hiding (Z)
@@ -29,15 +30,15 @@ butterfly ws vs = unhalve $ zipWith3 dft2 ws ys zs
 -- >>> eval (fft (twids 8)) [1,1,1,1,0,0,0,0]
 -- [4.0 :+ 0.0,0.0 :+ 0.0,0.0 :+ 0.0,0.0 :+ 0.0,1.0 :+ (-2.414213562373095),0.9999999999999999 :+ 0.4142135623730949,1.0 :+ (-0.4142135623730949),0.9999999999999997 :+ 2.414213562373095]
 --
-fft :: (Storable a, Num a) => Pull DIM1 (Expr a) -> Pull DIM1 (Expr a) -> Pull DIM1 (Expr a)
+fft :: (Computable a, Num a, Storable (Internal a)) => Pull DIM1 a -> Pull DIM1 a -> Pull DIM1 a
 fft ws vs = fromMem (extent vs) $ forLoop (ilog2 $ length1 vs) (toMem $ toPush vs) stage
   where
     stage s xs = toMem $ chnk (arrayLength xs .>>. s) (butterfly (ixMap (ixMap1 (.<<. s)) ws)) $ fromMem (extent vs) xs
 
-twid :: Expr Length -> Expr Index -> Expr (Complex Double)
+twid :: Expr Length -> Expr Index -> Complex Double
 twid n k = cis (-2 * pi * i2f k / i2f n)
 
-twids :: Expr Length -> Pull DIM1 (Expr (Complex Double))
+twids :: Expr Length -> Pull DIM1 (Complex Double)
 twids n = fromFunction (\(Z :. k) -> twid n k) (Z :. n `div` 2)
 {-
 bitRev :: Pull DIM1 a -> Pull DIM1 a
@@ -143,7 +144,7 @@ length arr = case extent arr of
                (Z :. l) -> l
 
 
---ex v = bitRev $ fft (twids $ length1 v) v
+-- ex v = {- bitRev $-} fft (twids $ length1 v) v
 
 dim1 :: (Expr Index -> a) -> (Shape (Z :. Expr Index) -> a)
 dim1 f (Z :. l) = f l
@@ -195,10 +196,22 @@ forcePull p@(Pull ixf sh) = Pull (\ix -> ixf' arr ix) sh
 composeOn :: (Computable a) => (b -> a -> a) -> Pull DIM1 b -> a -> a
 composeOn = flip . fold . flip
 
-type Complex a = (a, a)
+type Complex a = (Expr a, Expr a)
 
-cis :: (Storable a,Num a, Real a, Floating a) => Expr a -> Expr (Complex a)
-cis a = internalize (cos a, sin a)
+instance (Eq a,Num a,Floating a, Storable a) => Num (Expr a, Expr a) where
+  (a1,b1) + (a2,b2) = (a1+a2,b1+b2)
+  (a1,b1) * (a2,b2) = (a1*a2-b1*b2,a1*b2+b1*a2)
+  negate (a,b)      = (negate a, negate b)
+  fromInteger n     = (fromInteger n,0)
+  abs z             = (magnitude z,0)
+  signum z@(x,y)   = if_ (x == 0 && y == 0) (0,0) (x/r,y/r)
+    where r = magnitude z
+
+magnitude :: (Floating a, Storable a) => Complex a -> Expr a
+magnitude (x,y) = sqrt (x*x + y*y)
+
+cis :: (Storable a,Num a, Real a, Floating a) => Expr a -> Complex a
+cis a = (cos a, sin a)
 
 ilog2 :: (Typeable a,Bits a) => Expr a -> Expr Index
 ilog2 x = bitSize x - 1 - nlz x
@@ -241,14 +254,16 @@ bitCount x = popCount x
 length1 :: Pull (Z :. Expr Length) a -> Expr Length
 length1 (Pull _ixf (Z :. l)) = l
 
-toMem :: (Storable a) => Push sh (Expr a) -> Expr (UArray Int a)
+toMem :: (Computable a, Storable (Internal a)) => Push sh a -> Expr (UArray Int (Internal a))
 toMem (Push f sh) = runMutableArray $ do
                       arr <- newArrayE l
-                      f (\ix a -> writeArrayE arr (toIndex sh ix) a)
+                      f (\ix a -> writeArrayE arr (toIndex sh ix) (internalize a))
                       return arr
   where
     l = size sh
 
-fromMem :: (Storable a) => Shape sh -> Expr (UArray Int a) -> Pull sh (Expr a)
+fromMem :: (Computable a, Storable (Internal a)) => Shape sh -> Expr (UArray Int (Internal a)) -> Pull sh a
 fromMem sh e = Pull ixf sh
   where ixf i = externalize $ readIArray e (toIndex sh i)
+
+--type Complex a = (Expr a, Expr a)

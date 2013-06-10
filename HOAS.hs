@@ -21,6 +21,8 @@ import Data.List
 import Data.Maybe
 import Data.Bits (Bits)
 
+import GHC.Real
+
 import Control.Arrow
 import Control.Monad
 import Control.Monad.Reader
@@ -350,8 +352,9 @@ instance (Storable a, Fractional a) => Fractional (Expr a) where
   recip = Unop (TConst (typeConstOf0)) Recip
   fromRational = FromRational typeConstOf0
 
-instance (Storable a, Typeable a, Floating a, Real a) => Floating (Expr a) where
-  pi = fromRational (toRational (pi :: a))
+instance (Storable a, Typeable a, Floating a) => Floating (Expr a) where
+--  pi = fromRational (toRational (pi :: a))
+  pi   = fromRational (2383784714 :% 758782241)
   exp  = Unop typeOf0 Exp
   sqrt = Unop typeOf0 Sqrt
   log  = Unop typeOf0 Log
