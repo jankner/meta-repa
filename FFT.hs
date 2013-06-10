@@ -197,7 +197,7 @@ composeOn = flip . fold . flip
 
 type Complex a = (Expr a, Expr a)
 
-instance (Eq a,Num a,Floating a, Typeable a) => Num (Expr a, Expr a) where
+instance (Eq a,Num a,Floating a, Storable a) => Num (Expr a, Expr a) where
   (a1,b1) + (a2,b2) = (a1+a2,b1+b2)
   (a1,b1) * (a2,b2) = (a1*a2-b1*b2,a1*b2+b1*a2)
   negate (a,b)      = (negate a, negate b)
