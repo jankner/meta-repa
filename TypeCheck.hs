@@ -247,7 +247,7 @@ infer (ReadIArray _ e1 e2) = do
 infer (ArrayLength e) = do
   t <- infer e
   case t of
-    TIArr a -> return a
+    TIArr a -> return tInt
     _ -> throwError ("first argument of readIArray is not of type [a]. actual type: " ++ (show t))
 infer (NewArray tr e) = do
   t <- infer e
