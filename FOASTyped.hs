@@ -1074,8 +1074,8 @@ translateCompOpU t LEQ q1 q2 = [| $(wrapValue t q1) <= $(wrapValue t q2) |]
 unwrap :: Type -> Q Exp -> Q Exp
 unwrap (TConst tc)     e = unwrapPrim tc e
 unwrap t@(TFun t1 t2)  e = unwrapFun t e
-unwrap t@(TTup2 t1 t2) e = letE [valD (return (typeToPatternB "w" t)) (normalB e) []] (wrapVar "w" t)
-unwrap t@(TTupN ts)    e = letE [valD (return (typeToPatternB "w" t)) (normalB e) []] (wrapVar "w" t)
+unwrap t@(TTup2 t1 t2) e = letE [valD (return (typeToPatternB "w" t)) (normalB e) []] (unwrapVar "w" t)
+unwrap t@(TTupN ts)    e = letE [valD (return (typeToPatternB "w" t)) (normalB e) []] (unwrapVar "w" t)
 unwrap t               e = e
 
 unwrapVar :: String -> Type -> Q Exp
