@@ -13,7 +13,6 @@ import qualified Prelude as P
 import Prelude (Num(..),Fractional(..),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
 import Control.Monad
 
-import Core
 import HOAS hiding (Z)
 
 infixr 8 ^^
@@ -243,10 +242,10 @@ instance P.Functor (Push sh) where
     where m' k = m (\i a -> k i (f a))
 
 
-storePush :: Storable a => Push sh (Expr a) -> M (Expr (MArray a))
+storePush :: (Computable a, Storable (Internal a)) => Push sh a -> M (Expr (MArray (Internal a)))
 storePush (Push m sh) =
   do arr <- newArrayE (size sh)
-     m (\i a -> writeArrayE arr (toIndex sh i) a)
+     m (\i a -> writeArrayE arr (toIndex sh i) (internalize a))
      P.return arr
 
 (+.+) :: Push (sh:.Expr Length) a -> Push (sh:.Expr Length) a -> Push (sh:.Expr Length) a
