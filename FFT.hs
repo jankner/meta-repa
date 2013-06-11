@@ -24,6 +24,8 @@ butterfly ws vs = unhalve $ zipWith3 dft2 ws ys zs
   where
     (ys,zs) = halve vs
 
+runFFT vs = fft (twids (length1 vs)) vs
+
 -- | Cooley-Tukey Radix-2 Decimation In Frequency Fast Fourier Transfrom
 --
 -- >>> eval (fft (twids 8)) [1,1,1,1,0,0,0,0]
