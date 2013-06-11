@@ -1090,7 +1090,7 @@ unwrapVar b t              = varE (mkName b)
 
 unwrapFun :: Type -> Q Exp -> Q Exp
 unwrapFun t e = lamE (map return (concat (zipWith flatPat ws args)))
-                  (appsE (e : map return (zipWith typeToExpB ws args)))
+                  (unwrap r (appsE (e : map return (zipWith typeToExpB ws args))))
   where ws = map (("wa"++) . show) [0..]
         (args, r) = argsAndResult t
 
@@ -1121,7 +1121,7 @@ wrapVar b t              = varE (mkName b)
 
 wrapFun :: Type -> Q Exp -> Q Exp
 wrapFun t e = lamE (map return (zipWith typeToPatternB ws args))
-                (appsE (e : (map return $ concat $ zipWith flatApp ws args)))
+                (wrapValue r (appsE (e : (map return $ concat $ zipWith flatApp ws args))))
   where ws = map (("wa"++) . show) [0..]
         (args, r) = argsAndResult t
 
