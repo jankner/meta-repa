@@ -198,6 +198,11 @@ eq (FromInteger t1 i1)        (FromInteger t2 i2)        = t1 == t2 && i1 == i2
 eq (FromRational t1 r1)       (FromRational t2 r2)       = t1 == t2 && r1 == r2
 eq (FromIntegral t1 _ a1)     (FromIntegral t2 _ a2)     = t1 == t2 && a1 `eq` a2
 eq (BoolLit b1)               (BoolLit b2)               = b1 == b2
+eq (Bit t1 a1)                (Bit t2 a2)                = t1 == t2 && a1 `eq` a2 
+eq (Rotate t1 a1 b1)          (Rotate t2 a2 b2)          = t1 == t2 && a1 `eq` a2 && b1 `eq` b2
+eq (ShiftL t1 a1 b1)          (ShiftL t2 a2 b2)          = t1 == t2 && a1 `eq` a2 && b1 `eq` b2
+eq (ShiftR t1 a1 b1)          (ShiftR t2 a2 b2)          = t1 == t2 && a1 `eq` a2 && b1 `eq` b2
+eq (PopCnt t1 a1)             (PopCnt t2 a2)             = t1 == t2 && a1 `eq` a2
 eq (Tup2 a1 b1)               (Tup2 a2 b2)               = a1 `eq` a2 && b1 `eq` b2
 eq (Fst t1 a1)                (Fst t2 a2)                = t1 == t2 && a1 `eq` a2
 eq (Snd t1 a1)                (Snd t2 a2)                = t1 == t2 && a1 `eq` a2
@@ -252,6 +257,11 @@ cmp (FromInteger t1 i1)        (FromInteger t2 i2)        = compare t1 t2 `lexi`
 cmp (FromRational t1 r1)       (FromRational t2 r2)       = compare t1 t2 `lexi` compare r1 r2
 cmp (FromIntegral t1 _ a1)     (FromIntegral t2 _ a2)     = compare t1 t2 `lexi` a1 `cmp` a2
 cmp (BoolLit b1)               (BoolLit b2)               = compare b1 b2
+cmp (Bit t1 a1)                (Bit t2 a2)                = compare t1 t2 `lexi` a1 `cmp` a2 
+cmp (Rotate t1 a1 b1)          (Rotate t2 a2 b2)          = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (ShiftL t1 a1 b1)          (ShiftL t2 a2 b2)          = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (ShiftR t1 a1 b1)          (ShiftR t2 a2 b2)          = compare t1 t2 `lexi` a1 `cmp` a2 `lexi` b1 `cmp` b2
+cmp (PopCnt t1 a1)             (PopCnt t2 a2)             = compare t1 t2 `lexi` a1 `cmp` a2
 cmp (Tup2 a1 b1)               (Tup2 a2 b2)               = a1 `cmp` a2 `lexi` b1 `cmp` b2
 cmp (Fst t1 a1)                (Fst t2 a2)                = compare t1 t2 `lexi` a1 `cmp` a2
 cmp (Snd t1 a1)                (Snd t2 a2)                = compare t1 t2 `lexi` a1 `cmp` a2
@@ -310,6 +320,11 @@ exprOrd (Unit)                 = 30
 exprOrd (Skip)                 = 31
 exprOrd (Print _)              = 32
 exprOrd (Rec _ _ _)            = 33
+exprOrd (Bit _ _)              = 34
+exprOrd (Rotate _ _ _)         = 35
+exprOrd (ShiftL _ _ _)         = 36
+exprOrd (ShiftR _ _ _)         = 37
+exprOrd (PopCnt _ _)           = 39
 
 -- General traversal
 
@@ -329,6 +344,8 @@ exprRec :: ((Expr -> a) -> Expr -> a)
         -> a
 exprRec f g2 g3 g4 e@(FromIntegral t s e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(UnOp t op e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(Bit t e1) = exprFold f g2 g3 g4 e1
+exprRec f g2 g3 g4 e@(PopCnt t e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Fst t e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Snd t e1) = exprFold f g2 g3 g4 e1
 exprRec f g2 g3 g4 e@(Return _ e1) = exprFold f g2 g3 g4 e1
@@ -343,6 +360,9 @@ exprRec f g2 g3 g4 e@(Rec t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 
 exprRec f g2 g3 g4 e@(App e1 t e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(BinOp t op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Compare t op e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(Rotate t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(ShiftL t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
+exprRec f g2 g3 g4 e@(ShiftR t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Tup2 e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Let v e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
 exprRec f g2 g3 g4 e@(Bind t e1 e2) = g2 (exprFold f g2 g3 g4 e1) (exprFold f g2 g3 g4 e2)
@@ -379,6 +399,8 @@ exprTrav :: Monad m
          -> m (Expr,a)
 exprTrav f g e@(FromIntegral t s e1) = liftM ((FromIntegral t s) *** id) (exprTraverse f g e1)
 exprTrav f g e@(UnOp t op e1) = liftM ((UnOp t op) *** id) (exprTraverse f g e1)
+exprTrav f g e@(Bit t e1) = liftM ((Bit t) *** id) (exprTraverse f g e1)
+exprTrav f g e@(PopCnt t e1) = liftM ((PopCnt t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Fst t e1) = liftM ((Fst t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Snd t e1) = liftM ((Snd t) *** id) (exprTraverse f g e1)
 exprTrav f g e@(Lambda v t e1) = liftM ((Lambda v t) *** id) (exprTraverse f g e1)
@@ -393,6 +415,9 @@ exprTrav f g e@(Rec t e1 e2) = liftM2 ((Rec t) **** g) (exprTraverse f g e1) (ex
 exprTrav f g e@(App e1 t e2) = liftM2 ((flip App t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(BinOp t op e1 e2) = liftM2 ((BinOp t op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Compare t op e1 e2) = liftM2 ((Compare t op) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(Rotate t e1 e2) = liftM2 ((Rotate t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(ShiftL t e1 e2) = liftM2 ((ShiftL t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
+exprTrav f g e@(ShiftR t e1 e2) = liftM2 ((ShiftR t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Tup2 e1 e2) = liftM2 (Tup2 **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Let v e1 e2) = liftM2 ((Let v) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
 exprTrav f g e@(Bind t e1 e2) = liftM2 ((Bind t) **** g) (exprTraverse f g e1) (exprTraverse f g e2)
@@ -626,6 +651,15 @@ showExpr d (UnOp t op a) =
     Signum -> showApp d "signum" [a]
     Recip  -> showApp d "recip" [a]
     Complement -> showApp d "complement" [a]
+    Exp    -> showApp d "exp" [a]
+    Sqrt   -> showApp d "sqrt" [a]
+    Log    -> showApp d "log" [a]
+    Sin    -> showApp d "sin" [a]
+    Tan    -> showApp d "tan" [a]
+    Cos    -> showApp d "cos" [a]
+    ASin   -> showApp d "asin" [a]
+    ATan   -> showApp d "atan" [a]
+    ACos   -> showApp d "acos" [a]
 showExpr d (BinOp t op a b)  = showBinOp d op a b
 showExpr d (Compare t op a b) = showCompOp d op a b
 showExpr d (FromInteger t n) = showParen (d > 0) $ shows n . showString " :: " . shows t
@@ -638,6 +672,7 @@ showExpr d (Bit t a) = showApp d "bit" [a]
 showExpr d (Rotate t a b) = showApp d "rotate" [a,b]
 showExpr d (ShiftL t a b) = showApp d "shiftL" [a,b]
 showExpr d (ShiftR t a b) = showApp d "shiftR" [a,b]
+showExpr d (PopCnt t a) = showApp d "popCount" [a]
 showExpr d (BoolLit b)     = shows b
 showExpr d (Unit) = showString "()"
 showExpr d (Tup2 a b)    = showParen True $ showsPrec 0 a . showString ", " . showsPrec 0 b
