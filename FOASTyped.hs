@@ -704,6 +704,7 @@ translateU env (Bit t e) = unwrap t [| bit (I# $(translateU env e)) |]
 translateU env (Rotate t e1 e2) = unwrap t [| rotate $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (ShiftL t e1 e2) = unwrap t [| shiftL $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
 translateU env (ShiftR t e1 e2) = unwrap t [| shiftR $(wrapValue t (translateU env e1)) (I# $(translateU env e2)) |]
+translateU env (PopCnt t e1) = unwrap tInt [| popCount $(wrapValue t (translateU env e1)) |]
 translateU env (BoolLit b) = [| b |]
 translateU env (Compare t op e1 e2) = translateCompOpU t op (translateU env e1) (translateU env e2)
 translateU env (Unit) = [| () |]

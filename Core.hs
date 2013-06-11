@@ -71,6 +71,7 @@ toFOAS (HO.Bit t i) = FO.Bit (translateType t) (toFOAS i)
 toFOAS (HO.Rotate t a i) = FO.Rotate (translateType t) (toFOAS a) (toFOAS i)
 toFOAS (HO.ShiftL t a i) = FO.ShiftL (translateType t) (toFOAS a) (toFOAS i)
 toFOAS (HO.ShiftR t a i) = FO.ShiftR (translateType t) (toFOAS a) (toFOAS i)
+toFOAS (HO.PopCnt t a)   = FO.PopCnt (translateType t) (toFOAS a)
 
 toFOAS (HO.Equal    t a b) = FO.Compare (translateType t) FO.EQU (toFOAS a) (toFOAS b)
 toFOAS (HO.NotEqual t a b) = FO.Compare (translateType t) FO.NEQ (toFOAS a) (toFOAS b)
