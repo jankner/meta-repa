@@ -222,10 +222,10 @@ instance P.Functor (Pull sh) where
 fromFunction :: (Shape sh -> a) -> Shape sh -> Pull sh a
 fromFunction ixf sh = Pull ixf sh
 
-storePull :: Storable a => Pull sh (Expr a) -> M (Expr (MArray a))
+storePull :: (Computable a, Storable (Internal a)) => Pull sh a -> M (Expr (MArray (Internal a)))
 storePull (Pull ixf sh) = 
   do arr <- newArrayE (size sh)
-     forShape sh (\i -> writeArrayE arr i (ixf (fromIndex sh i))) 
+     forShape sh (\i -> writeArrayE arr i (internalize (ixf (fromIndex sh i))))
      P.return arr
 
 traverse :: Pull sh a -> (Shape sh -> Shape sh') -> ((Shape sh -> a) -> Shape sh' -> b) -> Pull sh' b
