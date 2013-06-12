@@ -115,22 +115,27 @@ infer (Rotate _ e1 e2) = do
   t2 <- infer e2
   matchType2 e1 t1 tInt
   unless (classMatch CBits t2) $
-    throwError ("argument of 'rotate' must be of class Integral in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
+    throwError ("argument of 'rotate' must be of class Bits in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
   return t2
 infer (ShiftL _ e1 e2) = do
   t1 <- infer e1
   t2 <- infer e2
   matchType2 e1 t1 tInt
   unless (classMatch CBits t2) $
-    throwError ("argument of 'shiftL' must be of class Integral in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
+    throwError ("argument of 'shiftL' must be of class Bits in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
   return t2
 infer (ShiftR _ e1 e2) = do
   t1 <- infer e1
   t2 <- infer e2
   matchType2 e1 t1 tInt
   unless (classMatch CBits t2) $
-    throwError ("argument of 'shiftR' must be of class Integral in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
+    throwError ("argument of 'shiftR' must be of class Bits in expression " ++ (show e2) ++ ". actual type: " ++ (show t2))
   return t2
+infer (PopCnt _ e) = do
+  t <- infer e
+  unless (classMatch CBits t) $
+    throwError ("argument of 'popCount' must be of class Bits in expression " ++ (show e) ++ ". actual type: " ++ (show t))
+  return tInt
 infer (BoolLit b) = return tBool
 infer (Unit) = return tUnit
 infer (Tup2 e1 e2) = liftM2 TTup2 (infer e1) (infer e2)
