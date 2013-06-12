@@ -27,10 +27,20 @@ sh1 -^ sh2 = zipShape (-) sh1 sh2
 (+^) :: Shape sh -> Shape sh -> Shape sh
 sh1 +^ sh2 = zipShape (+) sh1 sh2
 
+maxShape :: Shape sh -> Shape sh -> Shape sh
+maxShape sh1 sh2 = zipShape max sh1 sh2
+
+minShape :: Shape sh -> Shape sh -> Shape sh
+minShape sh1 sh2 = zipShape min sh1 sh2
+
+clampShape :: Shape sh -> Shape sh -> Shape sh
+clampShape bounds sh = zipShape (\b i -> min (b-1) (max 0 i)) bounds sh
+
+data Boundary a = BoundConst a
+                | BoundClamp
 
 data Stencil sh a b = forall s. Computable s => Stencil
-  { defaultValue :: a
-  , stencilSize :: Shape sh
+  { stencilSize :: Shape sh
   , sizeF :: Shape sh -> Shape sh
   , init :: (Shape sh -> a) -> s
   , step :: (Shape sh -> a) -> s -> s
@@ -38,15 +48,20 @@ data Stencil sh a b = forall s. Computable s => Stencil
   }
 
 
-runStencil :: Computable a => Stencil (sh :. Expr Int) a b -> Pull (sh :. Expr Int) a -> Push (sh :. Expr Int) b
-runStencil (Stencil z stSize@(stSh :. stL) sizeF init step write) (Pull ixf sh@(sh1 :. l1)) = Push f (sizeF sh)
+runStencil :: Computable a => Boundary a -> Stencil (sh :. Expr Int) a b -> Pull (sh :. Expr Int) a -> Push (sh :. Expr Int) b
+runStencil boundary (Stencil stSize sizeF init step write) (Pull ixf sh) = Push f (sizeF sh)
   where c = runStencilRegion init step write ixfC (centralRegion sh borderSize)
         borderSize = mapShape (`quot` 2) stSize
-        ixfC shBase = (\ix -> ixf (offset shBase ix))
-        ixfB shBase = (\ix -> let ix' = offset shBase ix 
-                              in  if_ (boundsCheck sh ix')
-                                     (ixf ix')
-                                     z)
+        ixfC shBase ix = ixf (offset shBase ix)
+        ixfB shBase ix = 
+          let ix' = offset shBase ix 
+          in  case boundary of
+            BoundConst z ->
+              if_ (boundsCheck sh ix')
+                (ixf ix')
+                z
+            BoundClamp ->
+                ixf (clampShape sh ix')
         b k r = runStencilRegion init step write ixfB r k
         f k =
           do c k
@@ -134,8 +149,7 @@ data GetThing t a = GetThing (Int,Int) (Expr (t Id) -> Expr a)
 makeStencil2 :: (Num a, Storable a, UTup t a, TupTypeable t) => Int -> Int -> t Thing -> t (GetFun t) -> Stencil DIM2 (Expr a) (Expr a)
 makeStencil2 sizeX sizeY t gt =
   Stencil 
-    { defaultValue = fromInteger 0
-    , stencilSize = F.Z :. numLit sizeY :. numLit sizeX
+    { stencilSize = F.Z :. numLit sizeY :. numLit sizeX
     , sizeF = P.id
     , init = initF t
     , step = stepF t gt (1,0)
@@ -173,8 +187,7 @@ data ThingE t a = ThingE (Int,Int) (t Expr -> Expr a)
 makeStencil2E :: (Num a, Storable a, UTup t a, TupTypeable t) => Int -> Int -> Int -> Int -> t (ThingE t) -> t (GetFun t) -> Stencil DIM2 (Expr a) (Expr a)
 makeStencil2E inSizeX inSizeY outSizeX outSizeY t gt =
   Stencil
-    { defaultValue = fromInteger 0
-    , stencilSize = F.Z :. numLit inSizeY :. numLit inSizeX
+    { stencilSize = F.Z :. numLit inSizeY :. numLit inSizeX
     , sizeF = undefined
     , init = \ixf -> ixf (Z :. 0 :. 0)
     , step = undefined
