@@ -48,7 +48,7 @@ bitRev xs = composeOn (\ix a -> ixMap (ixMap1 (rotBit ix)) a) (1 ... n) xs
 -}
 -- | Utilities that should go into Feldspar.Core.Frontend.Bits
 
-tstBit :: (Bits a, Storable a) => Expr a -> Expr Index -> Expr Bool
+tstBit :: (Num a, Bits a, Storable a) => Expr a -> Expr Index -> Expr Bool
 tstBit w b = w .&. bit b /= 0
 
 setbit :: (Bits a, Typeable a) => Expr a -> Expr Index -> Expr a
@@ -57,10 +57,10 @@ setbit w b = w .|. bit b
 clrbit :: (Bits a, Typeable a) => Expr a -> Expr Index -> Expr a
 clrbit w b = w .&. complement (bit b)
 
-iZero :: (Bits a, Storable a) => Expr Index -> Expr a -> Expr a
+iZero :: (Num a, Bits a, Storable a) => Expr Index -> Expr a -> Expr a
 iZero b w = w + (w .&. complement (oneBits b))
 
-iOne :: (Bits a, Storable a) => Expr Index -> Expr a -> Expr a
+iOne :: (Num a, Bits a, Storable a) => Expr Index -> Expr a -> Expr a
 iOne b w = bit b `xor` iZero b w
 
 type Pull1 a = Pull (Shape (Z :. Expr Length)) (Expr a)
@@ -73,10 +73,10 @@ rotBit a i = rotate a i
 forLoop :: Computable s => Expr Int -> s -> (Expr Int -> s -> s) -> s
 forLoop i s body = P.snd $ iterateWhile ((< i) . P.fst) (\(i,s) -> (i+1,body i s)) (0,s)
 
-oneBits :: (Bits a, Storable a) => Expr Index -> Expr a
+oneBits :: (Num a, Bits a, Storable a) => Expr Index -> Expr a
 oneBits n = complement (allOnes .<<. n)
 
-allOnes :: (Bits a, Storable a) => Expr a
+allOnes :: (Num a, Bits a, Storable a) => Expr a
 allOnes = complement 0
 
 -- | QuickCheck
