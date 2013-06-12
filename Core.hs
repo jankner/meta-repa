@@ -1,12 +1,51 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Core where
 
 import FOASTyped (reducel3,reducel4,isAtomic)
+import HOAS (Computable(..))
 import qualified FOASTyped as FO
 import qualified HOAS as HO
 import qualified FOASCommon as FO
+import TypeCheck
 import Types
+import Compilable
 
+import Language.Haskell.TH hiding (Type)
+
+compileR :: Compilable a => a -> Q Exp
+compileR a = [| \f -> reconstruct f $(e) |]
+  where e = everything2 (compile a)
+
+everything2 :: Computable a => a -> Q Exp
+everything2 e = do
+  r <- runIO $ everything e
+  case r of
+    Right (e,t)    -> do
+      x <- FO.translateW t e
+      --runIO $ print x
+      return x
+    Left error -> fail error
+
+
+everything :: Computable a => a -> IO (Either String (FO.Expr, Type))
+everything e = do
+  --let e' = internalize e
+  --print e'
+  let x = toFOAS (HO.internalize e)
+  --print x
+  --print r
+  return $ do r <- cseAndCheck x >>= (runTC . annotate)
+              t <- runTC $ infer r
+              return (r,t)
+
+
+cseAndCheck :: FO.Expr -> Either String FO.Expr
+cseAndCheck e =
+  do let e' = (FO.cse e)
+     --traceShow e' $ return ()
+     t' <- runTC (infer e')
+     return e'
 
 translateType :: HO.Type a -> Type
 translateType (HO.TConst tc) = TConst (translateTConst tc)
