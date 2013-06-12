@@ -31,8 +31,8 @@ runFFT vs = fft (twids (length1 vs)) vs
 -- >>> eval (fft (twids 8)) [1,1,1,1,0,0,0,0]
 -- [4.0 :+ 0.0,0.0 :+ 0.0,0.0 :+ 0.0,0.0 :+ 0.0,1.0 :+ (-2.414213562373095),0.9999999999999999 :+ 0.4142135623730949,1.0 :+ (-0.4142135623730949),0.9999999999999997 :+ 2.414213562373095]
 --
-fft :: (Computable a, Num a, Storable (Internal a)) => Pull DIM1 a -> Pull DIM1 a -> Pull DIM1 a
-fft ws vs = fromMem (extent vs) $ forLoop (ilog2 $ length1 vs) (toMem $ toPush vs) stage
+fft :: (Computable a, Num a, Storable (Internal a)) => Pull DIM1 a -> Pull DIM1 a -> Expr (IArray (Internal a)) {- Pull DIM1 a -}
+fft ws vs = {- fromMem (extent vs) $ -} forLoop (ilog2 $ length1 vs) (toMem $ toPush vs) stage
   where
     stage s xs = toMem $ chnk (arrayLength xs .>>. s) (butterfly (ixMap (ixMap1 (.<<. s)) ws)) $ fromMem (extent vs) xs
 
@@ -112,10 +112,10 @@ chnk c f v = Push loop (Z :. noc * c)
                       do let (Push k _) = toPush $ f (take c (drop (c*i) v))
                          k (\(Z :. j) a -> func (Z :. (c*i + j)) a)
 
-unpairWith :: (Arr arr, Computable a)
+unpairWith :: (Computable a)
            => ((Shape (Z :. Expr Index) -> a -> M ()) -> Shape (Z :. Expr Index) -> (a,a) -> M ())
-           -> arr DIM1 (a,a) -> Push DIM1 a
-unpairWith spread arr = case toPush arr of
+           -> Pull DIM1 (a,a) -> Push DIM1 a
+unpairWith spread arr = case toPushS arr of
                           Push f (Z :. l) -> Push (f . spread) (Z :. 2*l)
 
 fromDIM1 :: (Shape (Z :. Expr Index) -> a) -> (Expr Index -> a)
@@ -131,8 +131,8 @@ ixMap1 f (Z :. ix) = Z :. f ix
 
 -- everyOther = stride 2 1
 
-unhalve :: (Arr arr, Computable a)
-        => arr DIM1 (a,a) -> Push DIM1 a
+unhalve :: (Computable a)
+        => Pull DIM1 (a,a) -> Push DIM1 a
 unhalve xs = unpairWith (stride 1 (length xs)) xs
 
 stride :: Expr Length -> Expr Length
@@ -164,7 +164,7 @@ take :: Expr Int -> Pull DIM1 a -> Pull DIM1 a
 take i (Pull ixf (Z :. l)) = Pull ixf (Z :. (min i l))
 
 drop :: Expr Int -> Pull DIM1 a -> Pull DIM1 a
-drop i (Pull ixf (Z :. l)) = Pull (\(Z :. ix) -> ixf (Z :. ix + l)) (Z :. max (l - i) 0)
+drop i (Pull ixf (Z :. l)) = Pull (\(Z :. ix) -> ixf (Z :. ix + i)) (Z :. max (l - i) 0)
 
 (...) :: Expr Int -> Expr Int -> Pull DIM1 (Expr Int)
 f ... t = Pull (\ (Z :. i) -> i + f) (Z :. t - f + 1)
@@ -268,3 +268,7 @@ fromMem sh e = Pull ixf sh
   where ixf i = externalize $ readIArray e (toIndex sh i)
 
 --type Complex a = (Expr a, Expr a)
+
+toPushS :: Pull sh a -> Push sh a
+toPushS (Pull ixf sh) = Push f sh
+  where f k = whileE (< size sh) (+1) (\i -> k (fromIndex sh i) (ixf (fromIndex sh i))) 0
