@@ -276,7 +276,7 @@ instance Arr Push where
 index :: Pull sh a -> Shape sh -> a
 index (Pull ixf s) = ixf
 
-zipWith :: (Computable a, Computable b, Computable c) => (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
+zipWith :: (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
 zipWith f (Pull ixf1 sh1) (Pull ixf2 sh2) = Pull (\ix -> f (ixf1 ix) (ixf2 ix)) (intersectDim sh1 sh2)
 
 scanS :: (Computable a, Computable b) => (a -> b -> a) -> a -> Pull (sh :. Expr Length) b -> Push (sh:.Expr Length) a
