@@ -255,28 +255,49 @@ storePush (Push m sh) =
 permute :: Shape sh2 -> (Shape sh1 -> Shape sh2) -> Push sh1 a -> Push sh2 a
 permute sh2 perm (Push m sh1) = Push (\k -> m (\i a -> k (perm i) a)) sh2
 
+data MManifest sh a = (Computable a, Storable (Internal a)) => MManifest (Expr (IArray (Internal a))) (Shape sh)
+
 
 class Arr arr where
   toPush :: arr sh a -> Push sh a
-  ixMap  :: (Shape sh -> Shape sh) -> arr sh a -> arr sh a
   extent :: arr sh a -> (Shape sh)
 
 instance Arr Pull where
   toPush (Pull ixf sh) = Push m sh
     where m k = forShape sh (\i -> let ish = fromIndex sh i
                                    in  k ish (ixf ish))
-  ixMap f (Pull ixf sh) = Pull (ixf . f) sh
   extent (Pull _ sh) = sh
 
 instance Arr Push where
   toPush = P.id
-  ixMap f (Push m sh) = permute sh f (Push m sh)
   extent (Push _ sh) = sh
 
-index :: Pull sh a -> Shape sh -> a
-index (Pull ixf s) = ixf
 
-zipWith :: (Computable a, Computable b, Computable c) => (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
+class Source arr where
+  index :: arr sh a -> Shape sh -> a
+  forceSource :: (Computable a, Storable (Internal a)) => arr sh a -> MManifest sh a
+
+instance Source MManifest where
+  index (MManifest v sh) ix = externalize $ readIArray v (toIndex sh ix)
+  forceSource = P.id
+
+instance Source Pull where
+  index (Pull ixf sh) ix = ixf ix
+  forceSource arr@(Pull ixf sh) = MManifest (runMutableArray (storePull arr)) sh
+
+class Arr arr => IxMapable arr where
+  ixMap  :: (Shape sh -> Shape sh) -> arr sh a -> arr sh a
+
+instance IxMapable Pull where
+  ixMap f (Pull ixf sh) = Pull (ixf . f) sh
+
+instance IxMapable Push where
+  ixMap f (Push m sh) = permute sh f (Push m sh)
+
+--index :: Pull sh a -> Shape sh -> a
+--index (Pull ixf s) = ixf
+
+zipWith :: (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
 zipWith f (Pull ixf1 sh1) (Pull ixf2 sh2) = Pull (\ix -> f (ixf1 ix) (ixf2 ix)) (intersectDim sh1 sh2)
 
 scanS :: (Computable a, Computable b) => (a -> b -> a) -> a -> Pull (sh :. Expr Length) b -> Push (sh:.Expr Length) a
@@ -320,7 +341,7 @@ interleave2' (Pull ixf1 (sh1 :. l1)) (Pull ixf2 (sh2 :. l2)) = Push m sh
         sh  = sh1 :. (l1 + l2)
 
 
-reverse :: (Selector sel sh, Arr arr) => sel -> arr sh a -> arr sh a
+reverse :: (Selector sel sh, IxMapable arr) => sel -> arr sh a -> arr sh a
 reverse sel arr = ixMap (adjustLength sel (n-)) arr
   where n = selectLength sel (extent arr)
 
@@ -340,9 +361,9 @@ force (Push f l) = Push f' l
                     k (fromIndex l i) a
 
 
-forcePull :: Storable a => Pull sh (Expr a) -> Pull sh (Expr a)
+forcePull :: (Computable a, Storable (Internal a)) => Pull sh a -> Pull sh a
 forcePull p@(Pull ixf sh) = Pull (\ix -> ixf' arr ix) sh
-  where ixf' arr ix = readIArray arr (toIndex sh ix)
+  where ixf' arr ix = externalize $ readIArray arr (toIndex sh ix)
         arr = runMutableArray (storePull p)
 
 
