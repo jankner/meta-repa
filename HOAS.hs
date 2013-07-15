@@ -6,7 +6,40 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module HOAS where
+module HOAS
+  ( Type(..)
+  , TypeConst(..)
+  , Expr(..)
+  , Binop(..)
+  , Unop(..)
+  , Typeable(..)
+  , Storable
+  , Get(..)
+  , Tup(..)
+  , Computable(..)
+  , MArray
+  , IArray
+  , M
+  , runM
+  , getN
+  , parM
+  , newArrayE
+  , writeArrayE
+  , readArrayE
+  , readIArray
+  , arrayLength
+  , printE
+  , if_
+  , iterateWhile
+  , whileE
+  , runMutableArray
+  , let_
+  , rec
+  , lowerFun
+  , lowerFun2
+  , liftFun
+  , liftFun2
+  ) where
 
 
 import Data.Vector.Unboxed (Vector,Unbox)
