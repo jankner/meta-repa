@@ -151,15 +151,6 @@ nat7 = S nat6
 nat8 = S nat7
 nat9 = S nat8
 
-class Nat n where
-  natToInt :: n -> Int
-
-instance Nat Z where
-  natToInt _ = 0
-
-instance Nat n => Nat (S n) where
-  natToInt (S n) = 1 + natToInt n
-
 infixr 3 ::.
 
 newtype Id t = Id { unId :: t}
@@ -190,17 +181,21 @@ instance Tup as => Tup (Cons a as) where
 tupTail :: Tup as => (Cons a as m) -> as m
 tupTail (a ::. as) = as
 
-class (Nat n, Tup t) => Get n t m a | n t -> a where
+class Tup t => Get n t m a | n t -> a where
   tupGet :: n -> t m -> m a
+  natToInt :: n -> Int
 
 instance Get Z (Ein a) m a where
   tupGet Z (Ein a) = a
+  natToInt Z = 0
 
 instance Tup as => Get Z (Cons a as) m a where
   tupGet Z (a ::. as) = a
+  natToInt Z = 0
 
 instance Get n as m b => Get (S n) (Cons a as) m b where
   tupGet (S n) (a ::. as) = tupGet n as
+  natToInt (S n) = 1 + natToInt n
 
 
 class Tup t => TupTypeable t where
