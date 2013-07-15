@@ -584,24 +584,98 @@ instance (Computable a, Computable b, Computable c) => Computable (a,b,c) where
   externalize t =
     (externalize (getN Z t), externalize (getN nat1 t), externalize (getN nat2 t))
 
-
-instance (Computable a0, Computable a1, Computable a2,
-          Computable a3, Computable a4, Computable a5,
-          Computable a6, Computable a7, Computable a8) => Computable (a0,a1,a2,a3,a4,a5,a6,a7,a8) where
-  type Internal (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
-     Cons (Internal a0) (Cons (Internal a1) (Cons (Internal a2)
-    (Cons (Internal a3) (Cons (Internal a4) (Cons (Internal a5)
-    (Cons (Internal a6) (Cons (Internal a7) (Ein  (Internal a8))))))))) Id
-  internalize (a0,a1,a2,a3,a4,a5,a6,a7,a8) =
-    TupN ((internalize a0) ::. (internalize a1) ::. (internalize a2) ::.
-          (internalize a3) ::. (internalize a4) ::. (internalize a5) ::.
-          (internalize a6) ::. (internalize a7) ::. (Ein (internalize a8)))
+instance (Computable a, Computable b, Computable c, Computable d)
+         => Computable (a,b,c,d) where
+  type Internal (a,b,c,d) =
+    Cons (Internal a) (Cons (Internal b) (Cons (Internal c) (Ein (Internal d)))) Id
+  internalize (a,b,c,d) =
+    TupN (internalize a ::. internalize b ::. internalize c ::. Ein (internalize d))
   externalize t =
-    (externalize (getN Z    t), externalize (getN nat1 t),
-     externalize (getN nat2 t), externalize (getN nat3 t),
-     externalize (getN nat4 t), externalize (getN nat5 t),
-     externalize (getN nat6 t), externalize (getN nat7 t),
-     externalize (getN nat8 t))
+    ( externalize (getN Z    t), externalize (getN nat1 t)
+    , externalize (getN nat2 t), externalize (getN nat3 t))
+
+instance (Computable a, Computable b, Computable c,
+          Computable d, Computable e)
+          => Computable (a,b,c,d,e) where
+  type Internal (a,b,c,d,e) =
+     Cons (Internal a) (Cons (Internal b) (Cons (Internal c) 
+    (Cons (Internal d) (Ein  (Internal e))))) Id
+  internalize (a,b,c,d,e) =
+    TupN (internalize a ::. internalize b ::. internalize c ::.
+          internalize d ::. Ein (internalize e))
+  externalize t =
+    ( externalize (getN Z    t), externalize (getN nat1 t)
+    , externalize (getN nat2 t), externalize (getN nat3 t)
+    , externalize (getN nat4 t))
+
+instance (Computable a, Computable b, Computable c,
+          Computable d, Computable e, Computable f)
+          => Computable (a,b,c,d,e,f) where
+  type Internal (a,b,c,d,e,f) =
+     Cons (Internal a) (Cons (Internal b) (Cons (Internal c) 
+    (Cons (Internal d) (Cons (Internal e) (Ein  (Internal f)))))) Id
+  internalize (a,b,c,d,e,f) =
+    TupN (internalize a ::. internalize b ::. internalize c ::.
+          internalize d ::. internalize e ::. Ein (internalize f))
+  externalize t =
+    ( externalize (getN Z    t), externalize (getN nat1 t)
+    , externalize (getN nat2 t), externalize (getN nat3 t)
+    , externalize (getN nat4 t), externalize (getN nat5 t))
+
+instance (Computable a, Computable b, Computable c,
+          Computable d, Computable e, Computable f,
+          Computable g)
+          => Computable (a,b,c,d,e,f,g) where
+  type Internal (a,b,c,d,e,f,g) =
+     Cons (Internal a) (Cons (Internal b) (Cons (Internal c) 
+    (Cons (Internal d) (Cons (Internal e) (Cons (Internal f)
+    (Ein  (Internal g))))))) Id
+  internalize (a,b,c,d,e,f,g) =
+    TupN (internalize a ::. internalize b ::. internalize c ::.
+          internalize d ::. internalize e ::. internalize f ::.
+          Ein (internalize g))
+  externalize t =
+    ( externalize (getN Z    t), externalize (getN nat1 t)
+    , externalize (getN nat2 t), externalize (getN nat3 t)
+    , externalize (getN nat4 t), externalize (getN nat5 t)
+    , externalize (getN nat6 t))
+
+instance (Computable a, Computable b, Computable c,
+          Computable d, Computable e, Computable f,
+          Computable g, Computable h)
+          => Computable (a,b,c,d,e,f,g,h) where
+  type Internal (a,b,c,d,e,f,g,h) =
+     Cons (Internal a) (Cons (Internal b) (Cons (Internal c) 
+    (Cons (Internal d) (Cons (Internal e) (Cons (Internal f)
+    (Cons (Internal g) (Ein  (Internal h)))))))) Id
+  internalize (a,b,c,d,e,f,g,h) =
+    TupN (internalize a ::. internalize b ::. internalize c ::.
+          internalize d ::. internalize e ::. internalize f ::.
+          internalize g ::. Ein (internalize h))
+  externalize t =
+    ( externalize (getN Z    t), externalize (getN nat1 t)
+    , externalize (getN nat2 t), externalize (getN nat3 t)
+    , externalize (getN nat4 t), externalize (getN nat5 t)
+    , externalize (getN nat6 t), externalize (getN nat7 t))
+
+instance (Computable a, Computable b, Computable c,
+          Computable d, Computable e, Computable f,
+          Computable g, Computable h, Computable i)
+          => Computable (a,b,c,d,e,f,g,h,i) where
+  type Internal (a,b,c,d,e,f,g,h,i) =
+     Cons (Internal a) (Cons (Internal b) (Cons (Internal c)
+    (Cons (Internal d) (Cons (Internal e) (Cons (Internal f)
+    (Cons (Internal g) (Cons (Internal h) (Ein  (Internal i))))))))) Id
+  internalize (a,b,c,d,e,f,g,h,i) =
+    TupN (internalize a ::. internalize b ::. internalize c ::.
+          internalize d ::. internalize e ::. internalize f ::.
+          internalize g ::. internalize h ::. Ein (internalize i))
+  externalize t =
+    ( externalize (getN Z    t), externalize (getN nat1 t)
+    , externalize (getN nat2 t), externalize (getN nat3 t)
+    , externalize (getN nat4 t), externalize (getN nat5 t)
+    , externalize (getN nat6 t), externalize (getN nat7 t)
+    , externalize (getN nat8 t))
 
 instance (Computable a, Computable b) => Computable (a -> b) where
   type Internal (a -> b) = (Internal a -> Internal b)
