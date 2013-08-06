@@ -144,6 +144,11 @@ length :: Arr arr => arr (Z :. Expr Int) a -> Expr Int
 length arr = case extent arr of
                (Z :. l) -> l
 
+unhalve' :: (Computable a)
+         => Push DIM1 (a,a) -> Push DIM1 a
+unhalve' (Push f (Z :. l)) = Push (f . spread) (Z :. l * 2)
+  where spread f (Z :. ix) (a1,a2) = f (Z :. ix) a1 >>
+                                     f (Z :. (ix+l)) a2
 
 -- ex v = {- bitRev $-} fft (twids $ length1 v) v
 
