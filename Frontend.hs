@@ -272,7 +272,12 @@ instance Arr Push where
   toPush = P.id
   extent (Push _ sh) = sh
 
-class Source arr where
+instance Arr MManifest where
+  toPush (MManifest arr sh) = Push m sh
+    where m k = forShape sh (\i -> k (fromIndex sh i) (externalize $ readIArray arr i))
+  extent (MManifest _ sh) = sh
+
+class Arr arr => Source arr where
   index :: arr sh a -> Shape sh -> a
   forceSource :: (Computable a, Storable (Internal a)) => arr sh a -> MManifest sh a
 
@@ -292,6 +297,9 @@ instance IxMapable Pull where
 
 instance IxMapable Push where
   ixMap f (Push m sh) = permute sh f (Push m sh)
+
+delaySource :: Source arr => arr sh a -> Pull sh a
+delaySource arr = Pull (index arr) (extent arr)
 
 zipWith :: (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
 zipWith f (Pull ixf1 sh1) (Pull ixf2 sh2) = Pull (\ix -> f (ixf1 ix) (ixf2 ix)) (intersectDim sh1 sh2)
