@@ -25,6 +25,7 @@ module HOAS
   , MArray
   , IArray
   , M
+  , CProxy
   , runM
   , getN
   , parM
@@ -64,18 +65,19 @@ import Control.Monad
 import System.IO.Unsafe
 
 import Language.Haskell.TH hiding (Type)
+import Language.Haskell.TH.Syntax hiding (Type)
 
 type MArray a = IOVector a
 type IArray a = Vector a
 
 data Type a where
   TConst :: TypeConst a -> Type a
-  TTup2 :: Type a -> Type b -> Type (a,b)
-  TTupN :: Tup t => t Type -> Type (t Id)
-  TMArr :: Type a -> Type (MArray a)
-  TIArr :: Type a -> Type (IArray a)
-  TFun :: Type a -> Type b -> Type (a -> b)
-  TIO :: Type a -> Type (IO a)
+  TTup2  :: Type a -> Type b -> Type (a,b)
+  TTupN  :: Tup t => t Type -> Type (t Id)
+  TMArr  :: Type a -> Type (MArray a)
+  TIArr  :: Type a -> Type (IArray a)
+  TFun   :: Type a -> Type b -> Type (a -> b)
+  TIO    :: Type a -> Type (IO a)
 
 data TypeConst a where
   TInt :: TypeConst Int
@@ -88,6 +90,25 @@ data TypeConst a where
   TUnit :: TypeConst ()
 
 deriving instance Show (TypeConst a)
+
+liftTypeConst :: TypeConst a -> Q Exp
+liftTypeConst TInt    = conE 'TInt
+liftTypeConst TInt64  = conE 'TInt64
+liftTypeConst TWord   = conE 'TWord
+liftTypeConst TWord64 = conE 'TWord64
+liftTypeConst TDouble = conE 'TDouble
+liftTypeConst TFloat  = conE 'TFloat
+liftTypeConst TBool   = conE 'TBool
+liftTypeConst TUnit   = conE 'TUnit
+
+instance Lift (Type a) where
+  lift (TConst tc)   = conE 'TConst `appE` (liftTypeConst tc)
+  lift (TTup2 t1 t2) = conE 'TTup2 `appE` lift t1 `appE` lift t2
+  lift (TTupN ts)    = appsE ((conE 'TTupN) : tupMap lift ts)
+  lift (TMArr t)     = conE 'TMArr `appE` lift t
+  lift (TIArr t)     = conE 'TIArr `appE` lift t
+  lift (TFun t1 t2)  = conE 'TFun `appE` lift t1 `appE` lift t2
+  lift (TIO t)       = conE 'TIO `appE` lift t
 
 
 class (Typeable a, Unbox a) => Storable a 
@@ -594,22 +615,34 @@ showBinOp i Or    a b = (showExpr i a) ++ " || " ++ (showExpr i b)
 showBinOp i Max a b     = "(max " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 showBinOp i Min a b     = "(min " ++ (showExpr i a) ++ " " ++ (showExpr i b) ++ ")"
 
+data CProxy a where
+  CPExpr :: Type a -> CProxy (Expr a)
+  CPTup2 :: (CProxy a, CProxy b) -> CProxy (a,b)
+  CPFun  :: CProxy a -> CProxy b -> CProxy (a -> b)
+
+instance Lift (CProxy a) where
+  lift (CPExpr t)       = conE 'CPExpr `appE` lift t
+  lift (CPTup2 (t1,t2)) = conE 'CPTup2 `appE` tupE [lift t1, lift t2]
+  lift (CPFun t1 t2)    = conE 'CPFun  `appE` lift t1 `appE` lift t2
 
 class Typeable (Internal a) => Computable a where
   type Internal a
   internalize :: a -> Expr (Internal a)
   externalize :: Expr (Internal a) -> a
+  cProxy :: CProxy a
 
 
 instance Typeable a => Computable (Expr a) where
   type Internal (Expr a) = a
   internalize = id
   externalize = id
+  cProxy = CPExpr typeOf0
 
 instance (Computable a, Computable b) => Computable (a, b) where
   type Internal (a,b) = (Internal a, Internal b)
   internalize (a,b) = Tup2 (internalize a) (internalize b)
   externalize a = (externalize (Fst typeOf0 a), externalize (Snd typeOf0 a))
+  cProxy = CPTup2 (cProxy, cProxy)
 
 instance (Computable a, Computable b, Computable c) => Computable (a,b,c) where
   type Internal (a,b,c) =
@@ -618,6 +651,7 @@ instance (Computable a, Computable b, Computable c) => Computable (a,b,c) where
     TupN (internalize a ::. internalize b ::. Ein (internalize c))
   externalize t =
     (externalize (getN Z t), externalize (getN nat1 t), externalize (getN nat2 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b, Computable c, Computable d)
          => Computable (a,b,c,d) where
@@ -628,6 +662,7 @@ instance (Computable a, Computable b, Computable c, Computable d)
   externalize t =
     ( externalize (getN Z    t), externalize (getN nat1 t)
     , externalize (getN nat2 t), externalize (getN nat3 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b, Computable c,
           Computable d, Computable e)
@@ -642,6 +677,7 @@ instance (Computable a, Computable b, Computable c,
     ( externalize (getN Z    t), externalize (getN nat1 t)
     , externalize (getN nat2 t), externalize (getN nat3 t)
     , externalize (getN nat4 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b, Computable c,
           Computable d, Computable e, Computable f)
@@ -656,6 +692,7 @@ instance (Computable a, Computable b, Computable c,
     ( externalize (getN Z    t), externalize (getN nat1 t)
     , externalize (getN nat2 t), externalize (getN nat3 t)
     , externalize (getN nat4 t), externalize (getN nat5 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b, Computable c,
           Computable d, Computable e, Computable f,
@@ -674,6 +711,7 @@ instance (Computable a, Computable b, Computable c,
     , externalize (getN nat2 t), externalize (getN nat3 t)
     , externalize (getN nat4 t), externalize (getN nat5 t)
     , externalize (getN nat6 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b, Computable c,
           Computable d, Computable e, Computable f,
@@ -692,6 +730,7 @@ instance (Computable a, Computable b, Computable c,
     , externalize (getN nat2 t), externalize (getN nat3 t)
     , externalize (getN nat4 t), externalize (getN nat5 t)
     , externalize (getN nat6 t), externalize (getN nat7 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b, Computable c,
           Computable d, Computable e, Computable f,
@@ -711,11 +750,13 @@ instance (Computable a, Computable b, Computable c,
     , externalize (getN nat4 t), externalize (getN nat5 t)
     , externalize (getN nat6 t), externalize (getN nat7 t)
     , externalize (getN nat8 t))
+  cProxy = error "unimplemented cProxy"
 
 instance (Computable a, Computable b) => Computable (a -> b) where
   type Internal (a -> b) = (Internal a -> Internal b)
   internalize f = Lambda typeOf0 (internalize . f . externalize)
   externalize f = externalize . App f typeOf0 . internalize
+  cProxy = CPFun cProxy cProxy
 
 instance Computable () where
   type Internal () = ()

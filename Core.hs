@@ -14,8 +14,9 @@ import Compilable
 import Language.Haskell.TH hiding (Type)
 
 compileR :: Compilable a => a -> Q Exp
-compileR a = [| \f -> reconstruct f $(e) |]
+compileR a = [| reconstruct p $(e) |]
   where e = everything2 (compile a)
+        p = proxyOf a
 
 everything2 :: Computable a => a -> Q Exp
 everything2 e = do
