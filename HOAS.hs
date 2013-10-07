@@ -60,8 +60,6 @@ import GHC.Real
 
 import Control.Arrow
 import Control.Monad
-import Control.Monad.Reader
-import Control.Monad.State
 
 import System.IO.Unsafe
 
