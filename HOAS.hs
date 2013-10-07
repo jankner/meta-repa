@@ -15,8 +15,13 @@ module HOAS
   , Typeable(..)
   , Storable
   , Get(..)
+  , Nat(..)
   , Tup(..)
+  , TupTypeable(..)
+  , Ein(..)
+  , Cons(..)
   , Computable(..)
+  , Id(..)
   , MArray
   , IArray
   , M
@@ -214,22 +219,26 @@ instance Tup as => Tup (Cons a as) where
 tupTail :: Tup as => (Cons a as m) -> as m
 tupTail (a ::. as) = as
 
-class Tup t => Get n t m a | n t -> a where
+class (Nat n, Tup t) => Get n t a | n t -> a where
   tupGet :: n -> t m -> m a
+
+instance Get Z (Ein a) a where
+  tupGet Z (Ein a) = a
+
+instance Tup as => Get Z (Cons a as) a where
+  tupGet Z (a ::. as) = a
+
+instance Get n as b => Get (S n) (Cons a as) b where
+  tupGet (S n) (a ::. as) = tupGet n as
+
+class Nat n where
   natToInt :: n -> Int
 
-instance Get Z (Ein a) m a where
-  tupGet Z (Ein a) = a
+instance Nat Z where
   natToInt Z = 0
 
-instance Tup as => Get Z (Cons a as) m a where
-  tupGet Z (a ::. as) = a
-  natToInt Z = 0
-
-instance Get n as m b => Get (S n) (Cons a as) m b where
-  tupGet (S n) (a ::. as) = tupGet n as
+instance Nat n => Nat (S n) where
   natToInt (S n) = 1 + natToInt n
-
 
 class Tup t => TupTypeable t where
   tupTypes :: t m -> t Type
@@ -282,7 +291,7 @@ data Expr a where
   Snd :: Type (a,b) -> Expr (a,b) -> Expr b
 
   TupN :: (Tup t) => t Expr -> Expr (t Id)
-  GetN :: (Get n t Expr b) => Type (t Id) -> n -> Expr (t Id) -> Expr b
+  GetN :: (Get n t b) => Type (t Id) -> n -> Expr (t Id) -> Expr b
 
   Let :: Expr a -> (Expr a -> Expr b) -> Expr b
 
@@ -412,7 +421,7 @@ a .>>. i = ShiftR typeOf0 a i
 popCount :: (Typeable a, Bits a) => Expr a -> Expr Int
 popCount e = PopCnt typeOf0 e
 
-getN :: (TupTypeable t, Get n t Expr b) => n -> Expr (t Id) -> Expr b
+getN :: (TupTypeable t, Get n t b) => n -> Expr (t Id) -> Expr b
 getN n et = GetN typeOf0 n et
 
 data M a = M { unM :: forall b. Typeable b => ((a -> Expr (IO b)) -> Expr (IO b)) }
