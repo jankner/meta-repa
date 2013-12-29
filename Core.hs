@@ -1,6 +1,9 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
-module Core where
+module Core
+  ( module Frontend
+  , compileR
+  ) where
 
 import FOASTyped (reducel3,reducel4,isAtomic)
 import HOAS (Computable(..))
@@ -10,6 +13,7 @@ import qualified FOASCommon as FO
 import TypeCheck
 import Types
 import Compilable
+import qualified Frontend
 
 import Language.Haskell.TH hiding (Type)
 
