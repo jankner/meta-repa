@@ -298,8 +298,11 @@ instance IxMapable Pull where
 instance IxMapable Push where
   ixMap f (Push m sh) = permute sh f (Push m sh)
 
-delaySource :: Source arr => arr sh a -> Pull sh a
-delaySource arr = Pull (index arr) (extent arr)
+toPull :: Source arr => arr sh a -> Pull sh a
+toPull arr = Pull (index arr) (extent arr)
+
+map :: Source arr => (a -> b) -> arr sh a -> Pull sh b
+map f arr = fmap f (toPull arr)
 
 zipWith :: (a -> b -> c) -> Pull sh a -> Pull sh b -> Pull sh c
 zipWith f (Pull ixf1 sh1) (Pull ixf2 sh2) = Pull (\ix -> f (ixf1 ix) (ixf2 ix)) (intersectDim sh1 sh2)
@@ -363,6 +366,12 @@ force (Push f l) = Push f' l
                   forShape l $ \i -> do
                     a <- readArrayE arr i
                     k (fromIndex l i) a
+
+force' :: Storable a => Push sh (Expr a) -> MManifest sh (Expr a)
+force' (Push f l) = MManifest (runMutableArray m) l
+  where m = do arr <- newArrayE (size l)
+               f (\sh a -> writeArrayE arr (toIndex l sh) a)
+               return arr
 
 
 forcePull :: (Computable a, Storable (Internal a)) => Pull sh a -> Pull sh a
