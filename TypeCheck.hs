@@ -219,7 +219,9 @@ infer (Rec _ e1 e2) = do
   t2 <- infer e2
   case t1 of 
     TFun (TFun a1 r1) (TFun a2 r2) 
-      | a1 == a2 && r1 == r2 && t2 == a1 -> return r1
+      | a1 == a2 && r1 == r2 -> do matchType2 e2 t2 a1
+                                   return r1
+    _ -> throwError "type error in rec"
     _ -> throwError "type error in rec"
 infer (IterateWhile _ e1 e2 e3) = do
   t1 <- infer e1
