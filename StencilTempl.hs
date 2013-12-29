@@ -141,8 +141,8 @@ makeGetFun n =
      [| GetFun $(lam1E (varP ve) [| getN $(integerToNat n) $(varE ve) |]) |]
 
 integerToNat :: Int -> Q Exp
-integerToNat 0 = [| Z |]
-integerToNat n = [| S $(integerToNat (n-1)) |]
+integerToNat 0 = [| conZ |]
+integerToNat n = [| conS $(integerToNat (n-1)) |]
 
 makeThings :: [(Integer, Integer, Integer)] -> Q Exp
 makeThings [(x,y,v)]        = [| Ein $(makeThing (x,y,v)) |]

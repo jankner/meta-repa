@@ -45,6 +45,8 @@ module HOAS
   , lowerFun2
   , liftFun
   , liftFun2
+  , conS
+  , conZ
   ) where
 
 
@@ -197,6 +199,9 @@ instance TupTypeable t => Typeable (t Id) where
 
 data Z = Z
 data S n = S n
+
+conS = S
+conZ = Z
 
 nat1 = S Z
 nat2 = S nat1
