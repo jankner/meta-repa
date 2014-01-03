@@ -231,8 +231,9 @@ traverse :: Pull sh a -> (Shape sh -> Shape sh') -> ((Shape sh -> a) -> Shape sh
 traverse (Pull ixf sh) shFn elemFn = Pull (elemFn ixf) (shFn sh)
 
 
-backpermute :: Shape sh2 -> (Shape sh2 -> Shape sh1) -> Pull sh1 a -> Pull sh2 a
-backpermute sh2 perm (Pull ixf sh1) = Pull (ixf . perm) sh2
+backpermute :: Source arr => Shape sh2 -> (Shape sh2 -> Shape sh1) -> arr sh1 a -> Pull sh2 a
+backpermute sh2 perm arr = Pull (ixf . perm) sh2
+  where ixf = index arr
 
 
 data Push sh a = Push ((Shape sh -> a -> M ()) -> M ()) (Shape sh)
