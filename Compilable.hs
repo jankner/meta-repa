@@ -31,10 +31,11 @@ instance RShFun sh a => RShFun (sh R.:. Int) a where
   rshFun f = \(sh R.:. i) -> rshFun (f i) sh
 
 
-class (Computable (Fun sh a)
+class (Computable a
+      ,Computable (Fun sh a)
       ,Shapely sh
-      ,RShFun (ToRepaSh sh) (Meta a)
-      ,RFun (ToRepaSh sh) (Meta a) ~ Meta (Fun sh a))
+      ,RShFun (ToRepaSh sh) (Internal a)
+      ,RFun (ToRepaSh sh) (Internal a) ~ Internal (Fun sh a))
       => ShFun sh a where
   type Fun sh a
   shFun :: (Shape sh -> a) -> Fun sh a
@@ -63,8 +64,8 @@ instance RShTup sht => RShTup (Int, sht) where
 
 class (Computable (AsTup sh)
       ,Shapely sh
-      ,RShTup (Meta (AsTup sh))
-      ,ToRepaSh sh ~ RecSh (Meta (AsTup sh)))
+      ,RShTup (Internal (AsTup sh))
+      ,ToRepaSh sh ~ RecSh (Internal (AsTup sh)))
       => ShTup sh where
   type AsTup sh
   compileShape :: Shape sh -> AsTup sh
@@ -81,12 +82,6 @@ proxyFromShape :: Shape sh -> ShProxy sh
 proxyFromShape Z = PZ
 proxyFromShape (sh :. _) = PSnoc (proxyFromShape sh)
 
-type family Meta a
-type instance Meta ()       = ()
-type instance Meta (Expr a) = a
-type instance Meta (a, b)   = (Meta a, Meta b)
-type instance Meta (M a)    = IO (Meta a)
-type instance Meta (a -> b) = Meta a -> Meta b
 
 type family ToRepaSh a
 type instance ToRepaSh Z         = R.Z
@@ -118,7 +113,7 @@ class Computable (GenTy f) => Compilable f where
   type GenTy f
   type External f
   compile :: f -> GenTy f
-  reconstruct :: Proxy f -> (Meta (GenTy f)) -> External f
+  reconstruct :: Proxy f -> (Internal (GenTy f)) -> External f
   proxyOf :: f -> Proxy f
 
 instance Typeable a => Compilable (Expr a) where 
