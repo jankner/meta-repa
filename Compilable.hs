@@ -20,15 +20,18 @@ import Language.Haskell.TH.Syntax hiding (Type)
 
 class R.Shape sh => RShFun sh a where
   type RFun sh a
-  rshFun :: RFun sh a -> (sh -> a)
+  rshFun :: RFun sh a -> sh -> a
+  rshFunF :: (sh -> a) -> RFun sh a
 
 instance RShFun R.Z a where
   type RFun R.Z a = a
   rshFun a = P.const a
+  rshFunF f = f R.Z
 
 instance RShFun sh a => RShFun (sh R.:. Int) a where
   type RFun (sh R.:. Int) a = Int -> RFun sh a
   rshFun f = \(sh R.:. i) -> rshFun (f i) sh
+  rshFunF f = \i -> rshFunF (\sh -> f (sh R.:. i))
 
 
 class (Computable a
@@ -39,14 +42,17 @@ class (Computable a
       => ShFun sh a where
   type Fun sh a
   shFun :: (Shape sh -> a) -> Fun sh a
+  shFunR :: Fun sh a -> Shape sh -> a
 
 instance Computable a => ShFun Z a where
   type Fun Z a = a
   shFun f = f Z
+  shFunR a = P.const a
 
 instance ShFun sh a => ShFun (sh :. Expr Length) a where
   type Fun (sh :. Expr Length) a = Expr Length -> Fun sh a
   shFun f = \i -> shFun (\sh -> f (sh :. i))
+  shFunR f = \(sh :. i) -> shFunR (f i) sh
 
 
 class R.Shape (RecSh sht) => RShTup sht where
@@ -82,7 +88,6 @@ proxyFromShape :: Shape sh -> ShProxy sh
 proxyFromShape Z = PZ
 proxyFromShape (sh :. _) = PSnoc (proxyFromShape sh)
 
-
 type family ToRepaSh a
 type instance ToRepaSh Z         = R.Z
 type instance ToRepaSh (sh :. Expr Length) = ToRepaSh sh R.:. Int
@@ -93,6 +98,8 @@ instance Lift (Proxy a) where
   lift (PExprArg a p)        = conE 'PExprArg `appE` lift a `appE` lift p
   lift (PManifest sh a)      = conE 'PManifest `appE` lift sh `appE` lift a
   lift (PManifestArg sh a p) = conE 'PManifestArg `appE` lift sh `appE` lift a `appE` lift p
+  lift (PPull sh a)          = conE 'PPull `appE` lift sh `appE` lift a
+  lift (PPullArg sh a p)     = conE 'PPullArg `appE` lift sh `appE` lift a `appE` lift p
 
 instance Lift (ShProxy sh) where 
   lift PZ = conE 'PZ
@@ -103,6 +110,8 @@ data Proxy a where
   PExprArg :: Type a -> Proxy f -> Proxy (Expr a -> f)
   PManifest :: ShProxy sh -> CProxy a -> Proxy (MManifest sh a)
   PManifestArg :: ShProxy sh -> CProxy a -> Proxy f -> Proxy (MManifest sh a -> f)
+  PPull :: ShProxy sh -> CProxy a -> Proxy (Pull sh a)
+  PPullArg :: ShProxy sh -> CProxy a -> Proxy f -> Proxy (Pull sh a -> f)
 
 data ShProxy sh where
   PZ :: ShProxy Z
@@ -130,17 +139,23 @@ instance (Typeable a, Compilable f) => Compilable (Expr a -> f) where
   reconstruct (PExprArg _ p) f = \a -> reconstruct p (f a)
   proxyOf f = PExprArg typeOf0 (proxyOf undefined)
 
---instance (Computable a, Storable (Internal a), ShTup sh) => Compilable (Pull sh a) where
---  type GenTy (Pull sh a) = (Expr (IArray (Internal a)), AsTup sh)
---  type External (Pull sh a) = Manifest (ToRepaSh sh) (Internal a)
---  compile arr@(Pull ixf sh) = (runMutableArray (storePull arr), compileShape sh)
---  reconstruct _ (arr, sht) = Manifest arr (reconstructShape sht)
---
---instance (Computable a, Storable (Internal a), ShTup sh) => Compilable (Push sh a) where
---  type GenTy (Push sh a) = (Expr (IArray (Internal a)), AsTup sh)
---  type External (Push sh a) = Manifest (ToRepaSh sh) (Internal a)
---  compile arr@(Push ixf sh) = (runMutableArray (storePush arr), compileShape sh)
---  reconstruct _ (arr, sht) = Manifest arr (reconstructShape sht)
+instance (Computable a, ShTup sh, ShFun sh a)
+         => Compilable (Pull sh a) where
+  type GenTy (Pull sh a) = (Fun sh a, AsTup sh)
+  type External (Pull sh a) = R.Array R.D (ToRepaSh sh) (Internal a)
+  compile arr@(Pull ixf sh) = (shFun ixf, compileShape sh)
+  reconstruct _ (ixf, sht) = R.fromFunction (reconstructShape sht) (rshFun ixf)
+  proxyOf f = PPull (proxyFromShape (fakeShape "")) cProxy
+
+instance (Computable a, ShFun sh a, ShFun sh (GenTy f), Compilable f) 
+         => Compilable (Pull sh a -> f) where
+  type GenTy (Pull sh a -> f) = Fun sh a -> Fun sh (GenTy f)
+  type External (Pull sh a -> f) = R.Array R.D (ToRepaSh sh) (Internal a) -> (External f)
+  compile f = \ixf -> shFun ((\sh -> compile $ f (fromFunction (shFunR ixf) sh)) :: Shape sh -> GenTy f)
+  reconstruct (PPullArg _ _ p) f = \arr ->
+    let (sh, ixf) = R.toFunction arr
+    in  reconstruct p (rshFun (f (rshFunF ixf)) sh)
+  proxyOf f = PPullArg (proxyFromShape (fakeShape "")) cProxy (proxyOf undefined)
 
 instance (Computable a, Storable (Internal a), ShTup sh) => Compilable (MManifest sh a) where
   type GenTy (MManifest sh a) = (Expr (IArray (Internal a)), AsTup sh)
@@ -159,28 +174,6 @@ instance (Computable a, Storable (Internal a), ShFun sh (GenTy f), Compilable f)
         sh  = R.extent uarr
     in reconstruct p (rshFun (f arr) sh)
   proxyOf f = PManifestArg (proxyFromShape (fakeShape "")) cProxy (proxyOf undefined)
-
---instance (Computable a, Storable (Internal a), ShTup sh) => Compilable (MManifest sh a) where
---  type GenTy (MManifest sh a) = (Expr (IArray (Internal a)), AsTup sh)
---  type External (MManifest sh a) = Manifest (ToRepaSh sh) (Internal a)
---  compile (MManifest arr sh) = (arr, compileShape sh)
---  reconstruct (PManifest _ _) (arr, sht) = Manifest arr (reconstructShape sht)
---  proxyOf m = PManifest (proxyFromShape (fakeShape "")) cProxy
---
---instance (Computable a, Storable (Internal a), ShFun sh (GenTy f), Compilable f) 
---         => Compilable (MManifest sh a -> f) where
---  type GenTy (MManifest sh a -> f) = Expr (IArray (Internal a)) -> Fun sh  (GenTy f)
---  type External (MManifest sh a -> f) = Manifest (ToRepaSh sh) (Internal a) -> (External f)
---  compile f = \arr -> shFun ((\sh -> compile $ f (mmanifestFromArr sh arr)) :: Shape sh -> GenTy f)
---  reconstruct (PManifestArg _ _ p) f = \(Manifest arr sh) -> reconstruct p (rshFun (f arr) sh)
---  proxyOf f = PManifestArg (proxyFromShape (fakeShape "")) cProxy (proxyOf undefined)
-
---instance (Storable a, ShFun sh (GenTy f), Compilable f) 
---         => Compilable (Pull sh (Expr a) -> f) where
---  type GenTy (Pull sh (Expr a) -> f)    = Expr (IArray a) -> Fun sh  (GenTy f)
---  type External (Pull sh (Expr a) -> f) = Manifest (ToRepaSh sh) a -> (External f)
---  compile f = \arr -> shFun ((\sh -> compile $ f (pullFromArr sh arr)) :: Shape sh -> GenTy f)
---  reconstruct _ f = \(Manifest arr sh) -> reconstruct (undefined :: f) $ rshFun (f arr) sh
 
 mmanifestFromArr :: (Computable a, Storable (Internal a)) => Shape sh -> Expr (IArray (Internal a)) -> MManifest sh a
 mmanifestFromArr sh arr = MManifest arr sh
