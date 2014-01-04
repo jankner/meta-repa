@@ -8,7 +8,7 @@
 module Stencil where
 
 import qualified Prelude as P
-import Prelude ((.),($),Num(..),Maybe(..),otherwise,undefined,Int,Bool(..),const,map)
+import Prelude ((.),($),Num(..),Maybe(..),otherwise,undefined,Int,Bool(..),const)
 
 import Frontend as F
 import Core
@@ -109,7 +109,7 @@ borderRegions (shL :. l) (shB :. b) = r1 : r2 : rs
   where sh0 = mapShape (const 0) shL
         r1 = (sh0 :. 0      , shL :. b)
         r2 = (sh0 :. (l - b), shL :. l)
-        rs = map f (borderRegions shL shB)
+        rs = P.map f (borderRegions shL shB)
         f (sh1,sh2) = (sh1 :. b, sh2 :. (l - b))
 
 
