@@ -256,7 +256,7 @@ storePush (Push m sh) =
 permute :: Shape sh2 -> (Shape sh1 -> Shape sh2) -> Push sh1 a -> Push sh2 a
 permute sh2 perm (Push m sh1) = Push (\k -> m (\i a -> k (perm i) a)) sh2
 
-data MManifest sh a = (Computable a, Storable (Internal a)) => MManifest (Expr (IArray (Internal a))) (Shape sh)
+data Manifest sh a = (Computable a, Storable (Internal a)) => Manifest (Expr (IArray (Internal a))) (Shape sh)
 
 
 class Arr arr where
@@ -273,22 +273,22 @@ instance Arr Push where
   toPush = P.id
   extent (Push _ sh) = sh
 
-instance Arr MManifest where
-  toPush (MManifest arr sh) = Push m sh
+instance Arr Manifest where
+  toPush (Manifest arr sh) = Push m sh
     where m k = forShape sh (\i -> k (fromIndex sh i) (externalize $ readIArray arr i))
-  extent (MManifest _ sh) = sh
+  extent (Manifest _ sh) = sh
 
 class Arr arr => Source arr where
   index :: arr sh a -> Shape sh -> a
-  forceSource :: (Computable a, Storable (Internal a)) => arr sh a -> MManifest sh a
+  forceSource :: (Computable a, Storable (Internal a)) => arr sh a -> Manifest sh a
 
-instance Source MManifest where
-  index (MManifest v sh) ix = externalize $ readIArray v (toIndex sh ix)
+instance Source Manifest where
+  index (Manifest v sh) ix = externalize $ readIArray v (toIndex sh ix)
   forceSource = P.id
 
 instance Source Pull where
   index (Pull ixf sh) ix = ixf ix
-  forceSource arr@(Pull ixf sh) = MManifest (runMutableArray (storePull arr)) sh
+  forceSource arr@(Pull ixf sh) = Manifest (runMutableArray (storePull arr)) sh
 
 class Arr arr => IxMapable arr where
   ixMap  :: (Shape sh -> Shape sh) -> arr sh a -> arr sh a
@@ -368,8 +368,8 @@ force (Push f l) = Push f' l
                     a <- readArrayE arr i
                     k (fromIndex l i) a
 
-force' :: Storable a => Push sh (Expr a) -> MManifest sh (Expr a)
-force' (Push f l) = MManifest (runMutableArray m) l
+force' :: Storable a => Push sh (Expr a) -> Manifest sh (Expr a)
+force' (Push f l) = Manifest (runMutableArray m) l
   where m = do arr <- newArrayE (size l)
                f (\sh a -> writeArrayE arr (toIndex l sh) a)
                return arr
