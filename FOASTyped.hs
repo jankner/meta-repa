@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -fth #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module FOASTyped 
@@ -18,7 +18,6 @@ module FOASTyped
   , showVar
   ) where
 
-import FOASCommon
 import Types
 import Eval
 

@@ -3,13 +3,14 @@
 module Core
   ( module Frontend
   , compileR
+  , everything
+  , everything2
   ) where
 
 import FOASTyped (reducel3,reducel4,isAtomic)
 import HOAS (Computable(..))
 import qualified FOASTyped as FO
 import qualified HOAS as HO
-import qualified FOASCommon as FO
 import TypeCheck
 import Types
 import Compilable
