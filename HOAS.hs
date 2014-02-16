@@ -414,36 +414,6 @@ instance (Typeable a, Floating a) => Floating (Expr a) where
   atan = Unop typeOf0 ATan
   (**) = Binop typeOf0 Pow
 
---instance Bits a => Bits (Expr a) where
-(.&.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
-a .&. b = Binop typeOf0 BAnd a b
-
-(.|.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
-a .|. b = Binop typeOf0 BOr a b
-
-xor :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
-xor a b = Binop typeOf0 Xor a b
-
-(⊕) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
-a ⊕ b   = Binop typeOf0 Xor a b
-
-complement :: (Typeable a, Bits a) => Expr a -> Expr a
-complement a = Unop typeOf0 Complement a
-
-bit :: (Typeable a, Bits a) => Expr Int -> Expr a
-bit i = Bit typeOf0 i  
-
-rotate :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
-rotate a i = Rotate typeOf0 a i
-
-(.<<.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
-a .<<. i = ShiftL typeOf0 a i
-
-(.>>.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
-a .>>. i = ShiftR typeOf0 a i
-
-popCount :: (Typeable a, Bits a) => Expr a -> Expr Int
-popCount e = PopCnt typeOf0 e
 
 getN :: (TupTypeable t, Get n t b) => n -> Expr (t Id) -> Expr b
 getN n et = GetN typeOf0 n et

@@ -11,9 +11,10 @@ module Frontend where
 
 import qualified Prelude as P
 import Prelude (Num(..),Fractional(..),($),(.),Int,Bool,String,IO,Integral,Ord,Eq)
+import Data.Bits (Bits)
 import Control.Monad
 
-import HOAS hiding (Z)
+import HOAS
 
 infixr 8 ^^
 infixr 8 ^
@@ -121,6 +122,36 @@ x0 ^ y0 =
 x ^^ y = if_ (y <= 0)
           (x ^ y)
           (recip (x^(negate y)))
+
+(.&.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+a .&. b = Binop typeOf0 BAnd a b
+
+(.|.) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+a .|. b = Binop typeOf0 BOr a b
+
+xor :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+xor a b = Binop typeOf0 Xor a b
+
+(⊕) :: (Typeable a, Bits a) => Expr a -> Expr a -> Expr a
+a ⊕ b   = Binop typeOf0 Xor a b
+
+complement :: (Typeable a, Bits a) => Expr a -> Expr a
+complement a = Unop typeOf0 Complement a
+
+bit :: (Typeable a, Bits a) => Expr Int -> Expr a
+bit i = Bit typeOf0 i  
+
+rotate :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
+rotate a i = Rotate typeOf0 a i
+
+(.<<.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
+a .<<. i = ShiftL typeOf0 a i
+
+(.>>.) :: (Typeable a, Bits a) => Expr a -> Expr Int -> Expr a
+a .>>. i = ShiftR typeOf0 a i
+
+popCount :: (Typeable a, Bits a) => Expr a -> Expr Int
+popCount e = PopCnt typeOf0 e
 
 type Index  = P.Int
 type Length = P.Int
