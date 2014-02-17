@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -fth #-}
 {-# LANGUAGE GADTs, RankNTypes, FlexibleContexts, FlexibleInstances, TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -6,6 +5,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 module HOAS
   ( Type(..)
   , TypeConst(..)
@@ -47,6 +47,15 @@ module HOAS
   , liftFun2
   , conS
   , conZ
+  , (.<<.)
+  , (.>>.)
+  , complement
+  , (.|.)
+  , (.&.)
+  , rotate
+  , bit
+  , xor
+  , popCount
   ) where
 
 

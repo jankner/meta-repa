@@ -3,6 +3,8 @@
 module Core
   ( module Frontend
   , compileR
+  , everything
+  , everything2
   ) where
 
 import FOASTyped (reducel3,reducel4,isAtomic)
