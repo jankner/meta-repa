@@ -31,7 +31,7 @@ translateComputable e = do
 
 
 everything :: Computable a => a -> IO (Either String (FO.Expr, Type))
-everything everything = do
+everything e = do
   let x = toFOAS (HO.internalize e)
   return $ do r <- cseAndCheck x >>= (runTC . annotate)
               t <- runTC $ infer r
