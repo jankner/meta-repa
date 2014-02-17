@@ -17,28 +17,22 @@ import qualified Frontend
 import Language.Haskell.TH hiding (Type)
 
 compileR :: Compilable a => a -> Q Exp
-compileR a = [| reconstruct p $(e) |]
-  where e = everything2 (compile a)
-        p = proxyOf a
+compileR a = [| reconstruct p $(translateComputable (compile a)) |]
+  where p = proxyOf a
 
-everything2 :: Computable a => a -> Q Exp
-everything2 e = do
+translateComputable :: Computable a => a -> Q Exp
+translateComputable e = do
   r <- runIO $ everything e
   case r of
     Right (e,t)    -> do
       x <- FO.translateW t e
-      --runIO $ print x
       return x
     Left error -> fail error
 
 
 everything :: Computable a => a -> IO (Either String (FO.Expr, Type))
-everything e = do
-  --let e' = internalize e
-  --print e'
+everything everything = do
   let x = toFOAS (HO.internalize e)
-  --print x
-  --print r
   return $ do r <- cseAndCheck x >>= (runTC . annotate)
               t <- runTC $ infer r
               return (r,t)
