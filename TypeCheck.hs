@@ -10,7 +10,6 @@ module TypeCheck
   ) where
 
 import FOASTyped
-import FOASCommon
 import Types
 
 import Data.IORef

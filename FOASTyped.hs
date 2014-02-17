@@ -18,7 +18,6 @@ module FOASTyped
   , showVar
   ) where
 
-import FOASCommon
 import Types
 import Eval
 
