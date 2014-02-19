@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -fth #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs, RankNTypes, FlexibleContexts, FlexibleInstances, TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
